@@ -7,6 +7,25 @@ description: Library-agnostic Flutter/Dart code review checklist covering widget
 
 Comprehensive, library-agnostic checklist for reviewing Flutter/Dart applications. These principles apply regardless of which state management solution, routing library, or DI framework is used.
 
+## When to use / Skip
+
+**Use** when reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when asked to find anti-patterns, smells, or crash/leak risks, or to vet code before merging.
+
+**Skip** for pure backend/API/database logic, DevOps/infrastructure, non-visual scripts, or general Dart CLI work with no Flutter surface — those don't need this checklist.
+
+## Severity triage — review in this order
+
+Don't walk sections 1→15 linearly. Lead with the categories that cause crashes, data leaks, or exclusion, then descend to polish. Report findings highest-severity first.
+
+| Severity | Focus on these sections first | Why |
+|----------|-------------------------------|-----|
+| **CRITICAL** | §9 Security · §4 (mounted-after-`await`, subscription/timer disposal) · §12 Error handling (global capture, graceful degradation) | Hardcoded secrets, use-after-`await` crashes, and leaks ship real incidents |
+| **HIGH** | §7 Accessibility (contrast, 48×48 targets, color-not-sole-signal) · §5 Performance (build() cost, list virtualization, rebuilds) · §4 State-shape (impossible states, exhaustive async) · §3 Build-method complexity | User-visible breakage and jank; whole classes of bugs made unrepresentable |
+| **MEDIUM** | §2 Dart pitfalls · §3 const/keys/theming · §11 Navigation · §14 DI · §13 i18n · §6 Testing | Correctness and maintainability; degrade slowly, not acutely |
+| **LOW** | §1 Project health · §10 Dependencies · §15 Static analysis config · remaining §5 micro-optimizations | Hygiene and tooling; real but rarely urgent |
+
+Severity is contextual — a hardcoded color is LOW in a prototype, HIGH in a themed design system. Use judgment; the table is the default lead order, not a rigid rank.
+
 ---
 
 ## 1. General Project Health
