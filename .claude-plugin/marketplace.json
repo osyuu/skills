@@ -1,0 +1,31 @@
+{
+  "name": "osyuu",
+  "owner": {
+    "name": "Osyuu",
+    "email": "lf217189@gmail.com"
+  },
+  "metadata": {
+    "description": "Osyuu's personal Claude Code skills",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "design-doc",
+      "description": "Turn a requirement into a verifiable, implementation-ready detailed design document (SDD). Interrogates ambiguity first, then produces a design contract.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/design-doc"
+      ]
+    },
+    {
+      "name": "flutter-dart-code-review",
+      "description": "Library-agnostic Flutter/Dart code review checklist: widget best practices, state management, Dart idioms, performance, accessibility, security, clean architecture.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/flutter-dart-code-review"
+      ]
+    }
+  ]
+}
