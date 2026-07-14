@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.1.1"
+    "version": "1.2.0"
   },
   "plugins": [
     {
@@ -34,6 +34,15 @@
       "strict": false,
       "skills": [
         "./skills/flutter-dart-code-review"
+      ]
+    },
+    {
+      "name": "claude-md-hygiene",
+      "description": "Audit or rewrite a project's agent-facing CLAUDE.md/AGENTS.md so it stays stable norms + landmines only — push volatile status/todos/contract/design detail out to living docs, keep only invariants + pointers, and grep-verify every referenced symbol still exists.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/claude-md-hygiene"
       ]
     }
   ]
