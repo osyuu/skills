@@ -84,10 +84,11 @@ description: >-
 ### Step 3 — 寫檔 + git 排除
 
 1. 產出路徑：`docs/design/<slug>.md`（`<slug>` 用 kebab-case 的需求簡稱，例如 `user-login-otp`）。`docs/design/` 不存在就建立。
-2. **git 排除**：把設計書設為本機個人排除，不污染團隊共用的 `.gitignore`。寫入 `.git/info/exclude`（若 repo 是 git）：
+2. **git 排除（預設，不 block）**：預設把設計書設為**本機個人排除**（當個人設計筆記、不污染團隊共用的 `.gitignore`）。寫入 `.git/info/exclude`（若 repo 是 git）：
    - 檢查 `.git/info/exclude` 是否已含 `docs/design/`，沒有才追加一行 `docs/design/`。
    - 若不在 git repo，提醒使用者並照常寫檔。
-3. 寫完後回報檔案路徑，並摘要這份設計書做了哪些關鍵決策、還留下哪些待確認事項。
+   - 這是 least-regret 預設（excluded → 之後要 commit 很容易；反過來收回已 push 的檔是改歷史的痛）。**自動套用、不問使用者**，以維持 headless / 全自動 SDD。
+3. 寫完後回報：檔案路徑、關鍵決策、待確認事項，**並明講這個 git 決定 + 一句翻轉指引**——「已加進 `.git/info/exclude`（預設當個人筆記、不進版控）；**若這是團隊共享 spec、或有會 committed 的檔（如 `CLAUDE.md`）要指向它，請從 exclude 移除並 commit**，否則對隊友 / CI 是懸空指標」。
 
 ### Step 4 — 銜接 plan（選用）
 
