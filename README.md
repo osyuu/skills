@@ -22,6 +22,8 @@ Osyuu 的個人 Claude Code skill marketplace,跨開發環境共用。結構同 
 | `design-doc` | 需求 → 可驗證、可餵實作的詳細設計書(SDD);先逼問模糊點再產契約 |
 | `skill-authoring` | 寫/改/審 skill 的房規 + 範本 + 本 marketplace 登錄流程 |
 | `flutter-dart-code-review` | 與函式庫無關的 Flutter/Dart code review 檢查表 |
+| `claude-md-hygiene` | 審查/重寫 CLAUDE.md,只留穩定規範+指標,把易變狀態外移到 living docs |
+| `sdd-harness-init` | 把 decision-log drift 防護(DECISIONS.md + pre-commit + hooksPath)佈進任一 repo,idempotent |
 
 ## 維護
 

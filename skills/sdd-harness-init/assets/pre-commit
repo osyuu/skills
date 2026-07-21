@@ -1,0 +1,32 @@
+#!/bin/sh
+# >>> sdd-harness decision-log >>>
+# pre-commit: surface un-written-back design decisions at commit time.
+#
+# Reads docs/design/DECISIONS.md and lists any entry still marked `- [ ]`
+# (pending write-back). WARNS only — never blocks a commit — because you
+# should be free to commit WIP while a decision's spec delta lands in the
+# same *batch* (not necessarily the same commit). Hard enforcement belongs
+# at push/merge, not here.
+#
+# Shared via `git config core.hooksPath hooks` so worktrees pick it up.
+# That config is NOT version-controlled — fresh clones / new worktrees must
+# run it once (see the "決策記錄" section in this repo's CLAUDE.md).
+#
+# To make this BLOCK instead of warn: change the final `exit 0` to `exit 1`.
+# Bypass any time with `git commit --no-verify`.
+
+LOG="docs/design/DECISIONS.md"
+[ -f "$LOG" ] || exit 0
+
+# Un-checked entries = pending write-back. `- [x]` (done) / `- [~]` (deferred)
+# are intentionally ignored.
+PENDING=$(grep -nE '^- \[ \]' "$LOG" 2>/dev/null)
+[ -z "$PENDING" ] && exit 0
+
+printf '\033[33m⚠  decision-log 有未回寫的決策（%s）：\033[0m\n' "$LOG"
+printf '%s\n' "$PENDING" | sed 's/^/    /'
+printf '\033[33m   → 回寫進對應權威文件後把 - [ ] 改 - [x]（或 - [~] 明確延後）。\033[0m\n'
+printf '\033[33m   （僅提醒、不阻擋 commit；push/merge 前務必 drain 完。）\033[0m\n'
+
+exit 0
+# <<< sdd-harness decision-log <<<
