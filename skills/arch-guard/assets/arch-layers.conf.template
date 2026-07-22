@@ -1,0 +1,29 @@
+# arch-guard config — declares the dependency layering this repo enforces.
+# Sourced by hooks/arch-guard-check.sh. Rule: a file in a layer may import
+# ONLY layers below it (later in LAYERS). Upward imports, and — for PARTITIONED
+# layers — imports between sibling sub-modules, are flagged. Edit to fit.
+
+# Source root that holds the layer directories.
+ROOT="lib"
+
+# Package/module name as it appears in import strings.
+PACKAGE="<TODO-package-name>"
+
+# How an import line references a layer. {LAYER} is substituted per layer; the
+# trailing slash matters (so layer "data" doesn't match "database/").
+#   Dart   : import 'package:<pkg>/{LAYER}/
+#   TS/JS  : from ['"].*/{LAYER}/          (path/alias-based)
+#   Python : ^(from|import) <pkg>\.{LAYER}\.
+IMPORT_RE="import 'package:${PACKAGE}/{LAYER}/"
+
+# Layers TOP → BOTTOM. Higher may import lower; never the reverse. Each name is
+# a directory under ROOT. (blue_book reference: features shared data core)
+LAYERS="<TODO-top> ... <TODO-bottom>"
+
+# Layers split into sibling modules that must NOT import each other — e.g. a
+# feature-first "features" layer where features/a must not import features/b.
+# Space-separated; empty if none.
+PARTITIONED="<TODO-e.g. features>"
+
+# grep -v pattern for generated/ignored files (basic regex, \| to alternate).
+IGNORE='\.g\.dart\|\.freezed'
