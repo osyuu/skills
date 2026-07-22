@@ -24,6 +24,7 @@ Osyuu 的個人 Claude Code skill marketplace,跨開發環境共用。結構同 
 | `flutter-dart-code-review` | 與函式庫無關的 Flutter/Dart code review 檢查表 |
 | `claude-md-hygiene` | 審查/重寫 CLAUDE.md,只留穩定規範+指標,把易變狀態外移到 living docs |
 | `sdd-harness-init` | 把 decision-log drift 防護(DECISIONS.md + pre-commit + hooksPath)佈進任一 repo,idempotent |
+| `arch-guard` | 把分層依賴方向(features→shared→data→core 之類)用 warn-only pre-commit 鎖進 repo;git grep 抓往上/橫向 import,--strict 給 CI。語言無關、與 sdd-harness-init 共用同一個 hook |
 
 ## 維護
 
