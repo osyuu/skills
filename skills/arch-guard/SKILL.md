@@ -47,6 +47,7 @@ sh hooks/arch-guard-check.sh --audit
 列出所有現存違規 + 總數。乾淨→config 對了；一堆違規→要嘛 config 分錯層、要嘛真有債。真有債就跟使用者確認是「這次清」還是「標記待清」。
 
 **4. 把分層節加進 CLAUDE.md**：用 `assets/claude-md-arch-section.md` 當骨架，填成這個 repo 的實際層名/圖/表。理由：hook 抓違規，但「新東西該放哪層」要人/agent 看得到規則才不會一開始就放錯。
+- **避免重複佈線（靠條件、不靠 skill 名）**：模板尾巴那句「fresh clone 要跑 `git config core.hooksPath hooks`」是**共用 hook 佈線**、非分層專屬。grep 這份 CLAUDE.md：**若別處已有同一句 `core.hooksPath` 佈線指示（不論誰寫的）→ 刪掉本節那條、別重複**（重複＝drift 源，會被 claude-md-hygiene 抓）；沒有才保留。**注入的持久內容一律別提任何 skill 名**（否則對沒裝那個 skill 的 repo 就是空指向）——判斷靠「有沒有那句話」，不是「有沒有裝某 skill」。
 
 ## checker 行為（`hooks/arch-guard-check.sh`）
 
@@ -54,9 +55,9 @@ sh hooks/arch-guard-check.sh --audit
 - 預設 **warn-only、exit 0**（pre-commit 用）；`--strict` 有違規則 exit 1（CI / pre-push）；`--audit` 印違規 + 每輪計數。
 - git grep 掃工作樹（tracked 檔），確定性、無副作用。
 
-## 與 sdd-harness-init 的關係
+## 與其他 pre-commit harness 共存
 
-兩者都往 `hooks/pre-commit` 佈 warn-only 檢查、共用 `core.hooksPath`：sdd-harness-init 管 **decision-log drift**（契約無關），arch-guard 管 **分層方向**（架構專屬、靠 config 參數化）。一 skill 一職責，可各自安裝、疊在同一個 hook。裝了 sdd-harness-init 的 repo 再裝 arch-guard，checker 呼叫會**append** 進既有 pre-commit，不覆蓋。
+arch-guard 只管**分層方向**（架構專屬、靠 config 參數化）。若 repo 已有別的 warn-only pre-commit harness（**本 marketplace 的 `sdd-harness-init` 管 decision-log drift 是一例**），兩者一 skill 一職責、疊在同一支 hook：install.sh 偵測到既有 pre-commit 就 **append**（marker-guarded）不覆蓋，`core.hooksPath` 已設就沿用不改。**不預設任何特定 skill 存在**——共存與 dedup 都靠「repo 現況有沒有那個東西」判斷，不靠 skill 名。
 
 ## 限制（誠實說）
 

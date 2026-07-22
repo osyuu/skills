@@ -19,4 +19,7 @@
 
 - **鐵律：依賴只准往下。** 往上依賴、同層 sibling 互 import 一律禁止；發現既有的就是**待清違規**（起因通常是「該下沉的共享物留在上層，或該領域無關的東西塞進更上層」）。
 - **判準**：一個東西被 **≥2 個上層單元消費 → 下沉**；領域**無關**沉到最底層、領域**感知**沉到中間共享層。單一 owner 的東西留在它自己的單元。
-- 由 `hooks/pre-commit`（arch-guard）在 commit 時**列出違規（warn，不擋）**；規則見 `hooks/arch-layers.conf`。**fresh clone / 新 worktree 要跑一次 `git config core.hooksPath hooks`** 才生效。
+- 由 `hooks/pre-commit`（arch-guard）在 commit 時**列出違規（warn，不擋）**；規則見 `hooks/arch-layers.conf`。
+<!-- arch-guard: 下面這條是共用 hook 佈線、非分層專屬。若這份 CLAUDE.md 別處已寫了同一句
+     core.hooksPath 佈線指示（不論來源），刪掉下面這條、別重複；單獨裝時才保留。處理完連本註解一起刪。 -->
+- **fresh clone / 新 worktree 要先跑一次 `git config core.hooksPath hooks`** 才生效（此設定不進版控）。
