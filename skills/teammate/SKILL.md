@@ -1,7 +1,11 @@
 ---
 name: teammate
 description: >-
-  多 agent(teammate)協作的房規與派工令樣板——開幾個、怎麼派、報告收不到怎麼辦、什麼時候才能 stop、review 期間的 baseline 紀律、規格中途變更怎麼處理。當使用者說「spawn review」「開幾個 agent 審一下」「派人去查」「並行跑」「開 TM」,或你正要用 Agent/Task 工具開背景 agent、收到 teammate 的 idle 通知、要決定關不關掉某個 agent、要接手某個 agent 的工單時,主動使用。單純問「這段 code 怎麼寫」、或只開一個一次性搜尋 agent 時不需要。
+  多 agent(teammate)協作的房規與派工令樣板——開幾個、怎麼派、報告收不到怎麼辦、什麼時候才能
+  stop、review 期間的 baseline 紀律、規格中途變更怎麼處理。當使用者說「spawn
+  review」「開幾個 agent 審一下」「派人去查」「並行跑」「開 TM」,或你正要用 Agent/Task
+  工具開背景 agent、收到 teammate 的 idle 通知、要決定關不關掉某個 agent、要接手某個 agent
+  的工單時,主動使用。單純問「這段 code 怎麼寫」、或只開一個一次性搜尋 agent 時不需要。
 ---
 
 # 多 agent 協作房規

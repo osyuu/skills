@@ -1,7 +1,13 @@
 ---
 name: skill-authoring
 description: >-
-  撰寫、改進、審查 Claude Code skill 的房規與範本——涵蓋 SKILL.md 結構、description 觸發設計、漸進式揭露、右尺寸、去冗餘,以及本 marketplace 的登錄流程(加進 marketplace.json、bump version、去重本機同名 skill)。當使用者說「寫一個 skill / 新增 skill / 改進這個 skill / 這個 skill 怎麼沒觸發 / 幫 skill 潤一下 / review 這個 SKILL.md / 把這個流程變成 skill」,或在這個 skills repo 裡新增/編輯任何 SKILL.md 時,主動使用。需要跑嚴謹的 eval/benchmark 迭代時改用 bundled 的 skill-creator;本 skill 專注在「寫得好 + 正確登錄」。
+  撰寫、改進、審查 Claude Code skill 的房規與範本——涵蓋 SKILL.md 結構、description
+  觸發設計、漸進式揭露、右尺寸、去冗餘,以及本 marketplace 的登錄流程(加進
+  marketplace.json、bump version、去重本機同名 skill)。當使用者說「寫一個 skill / 新增
+  skill / 改進這個 skill / 這個 skill 怎麼沒觸發 / 幫 skill 潤一下 / review 這個 SKILL.md
+  / 把這個流程變成 skill」,或在這個 skills repo 裡新增/編輯任何 SKILL.md
+  時,主動使用。需要跑嚴謹的 eval/benchmark 迭代時改用 bundled 的 skill-creator;本 skill
+  專注在「寫得好 + 正確登錄」。
 ---
 
 # Skill Authoring — 房規與範本
