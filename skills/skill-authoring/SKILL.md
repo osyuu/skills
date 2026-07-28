@@ -43,22 +43,25 @@ description 決定「會不會被觸發」,勝過 body 裡任何內容。三個�
 **反例**:`把資料視覺化成圖表`
 **正例**:`把資料視覺化成圖表。當使用者提到 dashboard、報表、data viz、圖表、要呈現任何數據時主動使用,即使沒明講「圖表」二字。純資料清理(無視覺產出)不要用。`
 
-### ⚠️ frontmatter 有個會「靜默失效」的坑
+### ⚠️ 清單裡描述空白,通常不是你寫壞 YAML
 
-`description` 用 folded scalar `>-` 時,**務必折成多行**。只折一行的話載入器讀不到,description 變成空的——**skill 從此永不自動觸發**,而 YAML 合法、`yaml.safe_load` 解得出完整內容、肉眼看起來完全正常,所以極難察覺。
+看到 skill 清單只有 `- name` 而後面空白,第一直覺是 frontmatter 壞了。**多數情況不是**——是 harness 的**清單預算**把描述砍掉了(claude-code 2.1.220 實測 `formatCommandsWithinBudget`):
 
-```yaml
-description: >-          # ❌ 壞:>- 但只有一行續行
-  很長很長的一整串描述全部擠在這一行……
+- 每回合送給模型的 skill 清單有**總字元預算** = context window × 4 × `skillListingBudgetFraction`(預設 `0.01`)。裝的 skill 一多就超。
+- 超預算時按 **frecency 排序**砍:分數 = `usageCount × max(0.5^(天數/7), 0.1)`,**從沒被叫用過 = 0 分**。分數低的**整條描述被拿掉、只留 `- name`**;bundled skill 不砍。
+- 分數存在 `~/.claude.json` 的 `skillUsage`,key 是**限定名**(`plugin:skill`)。同名的本機 skill 與 plugin skill **是兩個 key、分數不互通**——從本機搬進 plugin 後等於歸零重數。
+- 另有每條上限 `skillListingMaxDescChars`(預設 1536 字),超過才截成 `…`(不是變空)。
 
-description: >-          # ✅ 好:折成多行
-  很長很長的一整串描述,
-  折成兩行以上就正常
-```
+**所以「新裝 + 還沒用過」的 skill 最容易被砍描述,而它正需要描述才會被自動觸發**——雞生蛋。這也是為什麼「改一改 description 就好了」常常是錯覺:真正變的是那陣子剛好叫用過它。
 
-單行 inline(`description: 一長串…`,不加 `>-`)也是好的。壞的只有「`>-` + 單行續行」這個組合。
+**診斷順序**(別急著改 YAML):
+1. `python3 -c "import json,os;print([k for k in json.load(open(os.path.expanduser('~/.claude.json')))['skillUsage']])"` — 這個限定名在不在?不在 = 0 分,被砍很正常。
+2. 真要排除 YAML,`yaml.safe_load` 解 frontmatter 看 description 拿不拿得到(拿得到就不是 YAML 的事)。
 
-**唯一的驗證方式**:`/reload-plugins` 後看 skill 清單有沒有帶出描述文字。只顯示 `name:name` 而後面空白 = 壞了。(本 repo 的 `skill-authoring` 與 `teammate` 都這樣壞過,前者壞了一段時間沒人發現——因為它壞的正是「該自動觸發卻沒觸發」,而那件事不會報錯。)
+**解法**(照順序,前兩個才是對症):
+1. `/skills` 把用不到的整包 skill 關掉 / 設 name-only — 釋放預算給真正在用的。
+2. 提高 `skillListingBudgetFraction`(settings.json)—— **每回合都吃 context**,慎用。
+3. 描述寫精短一點(治標,只是讓自己少佔預算)。
 
 ## body 撰寫風格
 
@@ -88,7 +91,7 @@ description: >-          # ✅ 好:折成多行
 ## 品質自檢(寫完/改完自問)
 
 - description 有沒有同時講「做什麼 + 何時用」?夠不夠 pushy?要不要加負面觸發?
-- **description 若用 `>-`,有沒有折成多行?**(只折一行 = 載入器讀不到 = 永不觸發,且不報錯)`/reload-plugins` 後在 skill 清單確認描述文字真的有帶出來。
+- 清單裡這個 skill 有帶出描述嗎?**空白先查 `skillUsage` 分數與清單預算,別直接怪 YAML**(見上節)。
 - body 是否 <500 行?每次都要的才留 body,其餘進 references/assets?
 - 有沒有解釋 why,還是在堆 ALL-CAPS MUST?
 - 有沒有逐字重複?跨節重複是刻意(有用)還是冗餘(該刪)?
