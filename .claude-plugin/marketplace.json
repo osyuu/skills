@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "plugins": [
     {
@@ -61,6 +61,15 @@
       "strict": false,
       "skills": [
         "./skills/arch-guard"
+      ]
+    },
+    {
+      "name": "teammate",
+      "description": "多 agent(teammate)協作的房規與派工令樣板:開幾個由視角決定、派工令必備六條、報告收不到的處理、stop 的前提、review 期間的 baseline 紀律、規格中途變更的重派流程。",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/teammate"
       ]
     }
   ]
