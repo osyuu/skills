@@ -82,14 +82,23 @@ description: >-
 
 同時確認兩件 SDD 交付要求：**交付物清單**列全了嗎（code、migration、**版本化契約文件**、驗證腳本、輔助工具——漏列的交付物 = 不會被做）？**每條驗收標準都標了驗證方式**嗎（自動測試 / 腳本 / 手動步驟；若環境跑不了本地測試，驗證腳本本身要升級為交付物）？
 
-### Step 3 — 寫檔 + git 排除
+### Step 3 — 寫檔 + 版控歸屬
 
 1. 產出路徑：`docs/design/<slug>.md`（`<slug>` 用 kebab-case 的需求簡稱，例如 `user-login-otp`）。`docs/design/` 不存在就建立。
-2. **git 排除（預設，不 block）**：預設把設計書設為**本機個人排除**（當個人設計筆記、不污染團隊共用的 `.gitignore`）。寫入 `.git/info/exclude`（若 repo 是 git）：
-   - 檢查 `.git/info/exclude` 是否已含 `docs/design/`，沒有才追加一行 `docs/design/`。
-   - 若不在 git repo，提醒使用者並照常寫檔。
-   - 這是 least-regret 預設（excluded → 之後要 commit 很容易；反過來收回已 push 的檔是改歷史的痛）。**自動套用、不問使用者**，以維持 headless / 全自動 SDD。
-3. 寫完後回報：檔案路徑、關鍵決策、待確認事項，**並明講這個 git 決定 + 一句翻轉指引**——「已加進 `.git/info/exclude`（預設當個人筆記、不進版控）；**若這是團隊共享 spec、或有會 committed 的檔（如 `CLAUDE.md`）要指向它，請從 exclude 移除並 commit**，否則對隊友 / CI 是懸空指標」。
+2. **不要自作主張改 repo 的 git 設定**。寫完檔就停手：它是個 untracked 檔，會出現在 `git status`，使用者在 commit 當下自然看得到。這是零設定、兩個方向都還能輕鬆回頭的狀態——自動排除或自動 commit 都是替使用者做了他沒同意的決定。
+
+3. **版控歸屬：每個 repo 問一次，之後靠偵測**。先找既有訊號，有訊號就照做、不要再問：
+   - `git ls-files docs/design/` 有輸出 → 這個 repo 的設計書**進版控**。
+   - `git check-ignore -v docs/design/<slug>.md` 命中 → **不進版控**。
+   - 兩者皆無 = 這個 repo 第一次寫設計書 → **問使用者一次**（有結構化提問工具就用它），兩個選項：
+     - **進版控**（repo 已有 CI、SDD harness、或多人協作時建議）：設計書是團隊共享契約，進得了 PR diff / CI / fresh agent 的視野，回寫才有強制力（見 Step 5）。
+     - **不進版控**（個人設計筆記）：追加一行 `docs/design/` 到 `.git/info/exclude`——用本機個人排除，不去污染團隊共用的 `.gitignore`。
+
+   **把答案變成下次的訊號**，否則每次都要重問：選「不進版控」時寫進 exclude 這動作本身就是訊號；選「進版控」則提醒使用者把檔案 commit（commit 前 `git ls-files` 仍是空的）。repo 若有 CLAUDE 檔且已有設計/SDD 相關章節，順手補一行寫明歸屬，讓下一個 session 與其他 agent 不必重新推斷。
+
+   **拿不到回答時**（排程、批次、headless）：不要猜、也不要動 git——檔案留 untracked，在回報裡明講「版控歸屬未定，請在第一次 commit 時決定」。這比猜錯任一方向都便宜。
+
+4. 寫完後回報：檔案路徑、關鍵決策、待確認事項，**並明講目前的版控歸屬**。若是不進版控，補一句風險——**若有會被 commit 的檔（如 `CLAUDE.md`、`DECISIONS.md`）指向這份設計書，歸屬就必須改成進版控**，否則對隊友 / CI 是懸空指標。
 
 ### Step 4 — 銜接 plan（選用）
 
