@@ -44,7 +44,7 @@ sh <skill-dir>/scripts/install.sh
 ## 收尾提醒
 
 - **`core.hooksPath` 不進版控**：fresh clone / 新 worktree 都要各自再跑一次 `git config core.hooksPath hooks` 才生效。這句已寫進 CLAUDE 指標節與 hook 註解，別漏講。
-- **DECISIONS.md 要被追蹤**：若 repo 把 `docs/design/` 排除（常見，design 當個人筆記），腳本會 force-add DECISIONS.md 與 hook——因為機制要對隊友/CI 生效就得進版控。這跟「其他 design doc 保持 git-excluded」不衝突。
+- **DECISIONS.md 要被追蹤**：若 repo 把 `docs/design/` 排除（把 design 當個人筆記的專案會這樣設），腳本會 force-add DECISIONS.md 與 hook——因為機制要對隊友/CI 生效就得進版控。這不影響同目錄其他設計書的歸屬，那是 `design-doc` skill 每個 repo 問一次的獨立設定。
 - **hook 是 warn-only（軟約束）**：要硬 gate（擋 merge）得靠 CI 去讀 DECISIONS.md + spec 進版控；pre-commit 本身刻意不擋（改末尾 `exit 0`→`exit 1` 可改成擋，但通常不建議）。
 - 跟 `design-doc` skill 的關係：本 skill 佈好 DECISIONS.md，design-doc 產出的設計書就有地方掛、翻案有地方記。裝完 harness 後要寫 spec，轉 design-doc。
 - 跟 `claude-md-hygiene` skill **不衝突、互補**：本 skill 注入 CLAUDE.md 的那節剛好是 hygiene 要保留的三類（不變式機制＋指向 DECISIONS.md 的指標＋「hooksPath 不進版控」這個踩坑），真正易變的決策本身在 DECISIONS.md、不在 CLAUDE.md，所以 hygiene 會留下這節。唯一要注意：hygiene 若整份重寫 CLAUDE.md 可能洗掉隱形 marker——上面第 2 步的「標題 fallback + 就地重包」已處理，不會重複注入。
