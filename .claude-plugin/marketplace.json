@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.5.2"
+    "version": "1.7.0"
   },
   "plugins": [
     {
@@ -70,6 +70,24 @@
       "strict": false,
       "skills": [
         "./skills/teammate"
+      ]
+    },
+    {
+      "name": "release-assets",
+      "description": "Ship the non-code deliverables cleanly: release notes, store screenshots, changelog, version bump. Inventory first, understand what you replace, review as the audience, leave no residue.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/release-assets"
+      ]
+    },
+    {
+      "name": "comment-budget",
+      "description": "Warn-only pre-commit guard on comment volume: over-long blocks, per-file comment ratio, and narrative/verification-process wording. Comments should say what the code cannot; history goes to git log, verification goes to the commit message.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/comment-budget"
       ]
     }
   ]
