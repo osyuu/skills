@@ -39,8 +39,19 @@ if [ -f hooks/pre-commit ]; then
   if grep -qF "$MARK" hooks/pre-commit; then
     echo "arch-guard: pre-commit already calls the checker — unchanged"
   else
-    printf '\n%s\n' "$BLOCK" >> hooks/pre-commit
-    echo "arch-guard: appended checker call to existing hooks/pre-commit"
+    # 不能無腦 append：dispatcher 常以頂層 `exit 0` 收尾，接在它後面的區塊永遠
+    # 不會執行——裝了卻不觸發是最糟的失敗（看起來有守門，其實沒有）。
+    if awk '/^exit 0$/ { f = 1 } END { exit !f }' hooks/pre-commit; then
+      LINE=$(awk '/^exit 0$/ { n = NR } END { print n }' hooks/pre-commit)
+      { head -n $((LINE - 1)) hooks/pre-commit
+        printf '%s\n\n' "$BLOCK"
+        tail -n +"$LINE" hooks/pre-commit
+      } > hooks/pre-commit.tmp && mv hooks/pre-commit.tmp hooks/pre-commit
+      echo "arch-guard: inserted checker call before the trailing 'exit 0'"
+    else
+      printf '\n%s\n' "$BLOCK" >> hooks/pre-commit
+      echo "arch-guard: appended checker call to existing hooks/pre-commit"
+    fi
   fi
 else
   printf '%s\n%s\n' '#!/bin/sh' "$BLOCK" > hooks/pre-commit

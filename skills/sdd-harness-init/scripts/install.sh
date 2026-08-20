@@ -75,7 +75,7 @@ if [ -f "$HOOK_FILE" ]; then
     ok "$HOOK_FILE 已含本機制的區塊，跳過。"
   else
     todo "$HOOK_FILE 已存在且非本機制產出 → 不覆蓋。"
-    add_followup "把 $ASSETS/pre-commit 的 marker 區塊（>>> … <<<）附加進既有 ${HOOK_FILE}，別覆蓋原邏輯。"
+    add_followup "把 $ASSETS/pre-commit 的 marker 區塊（>>> … <<<）併進既有 ${HOOK_FILE}，別覆蓋原邏輯。⚠️ 若該檔以頂層 `exit 0` 收尾，區塊要插在它**之前**——接在後面永遠不會執行（裝了卻不觸發＝假綠燈）。"
   fi
 else
   mkdir -p "$HOOK_DIR"
