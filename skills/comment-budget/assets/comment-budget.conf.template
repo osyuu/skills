@@ -1,0 +1,18 @@
+# comment-budget 門檻（sh 語法，會被 source）。改完直接生效，不必重裝。
+#
+# 先跑幾次看實際開火率再調：對七成 commit 開火 = 噪音，會被無視；
+# 完全不開火 = 門檻等於沒裝。目標是「只有離群值會亮」。
+
+# 單一連續註解區塊幾行算過長
+COMMENT_BLOCK_MAX=10
+
+# 單檔本次新增的註解佔比超過幾 % 算過量
+COMMENT_RATIO_MAX=40
+
+# 註解行數少於這個值就不做佔比判斷（避免小改動加三行註解就 100%）
+COMMENT_RATIO_MIN_LINES=15
+
+# 副檔名 → 行註解符號。預設已涵蓋常見語言，需要時在這裡增補。
+# COMMENT_EXT_SLASH="swift js ts go rs kt dart ..."
+# COMMENT_EXT_HASH="py rb sh ..."
+# COMMENT_EXT_DASH="sql hs lua"
