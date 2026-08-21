@@ -1,6 +1,6 @@
 ---
 name: flutter-dart-code-review
-description: Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, testing, i18n, navigation, DI, and clean architecture. Use this whenever reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when the user asks to check code quality, find anti-patterns or smells, or vet code before merging, even if they don't literally say "review" (審查 / code review / 檢查 Flutter 程式碼 / 這段 Dart 有沒有問題).
+description: Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, testing, i18n, navigation, DI, and clean architecture. Use this whenever reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when the user asks to check code quality, find anti-patterns or smells, or vet code before merging, even if they don't literally say "review" (審查 / code review / 檢查 Flutter 程式碼 / 這段 Dart 有沒有問題). Skip it for pure backend/CLI Dart with no Flutter surface, and for writing new code rather than reviewing existing code.
 ---
 
 # Flutter/Dart Code Review Best Practices
@@ -26,6 +26,60 @@ Don't walk sections 1→15 linearly. Lead with the categories that cause crashes
 
 Severity is contextual — a hardcoded color is LOW in a prototype, HIGH in a themed design system. Use judgment; the table is the default lead order, not a rigid rank.
 
+Section numbers are stable so the references above keep working, which is why the file no
+longer runs 1→15: the two CRITICAL sections that used to sit near the end are now directly
+below this table. Attention thins toward the end of a long file, and those are the two that
+ship incidents.
+
+---
+
+## 9. Security
+
+### Secure storage:
+- [ ] Sensitive data (tokens, credentials) stored using platform-secure storage (Keychain on iOS, EncryptedSharedPreferences on Android)
+- [ ] Never store secrets in plaintext storage
+- [ ] Sensitive operations (payment, credential change, data export) without biometric gating are flagged
+
+### API key handling:
+- [ ] API keys NOT hardcoded in Dart source — use `--dart-define`, `.env` files excluded from VCS, or compile-time configuration
+- [ ] Secrets not committed to git — check `.gitignore`
+- [ ] Backend proxy used for truly secret keys (client should never hold server secrets)
+
+### Input validation:
+- [ ] All user input validated before sending to API
+- [ ] Form validation uses proper validation patterns
+- [ ] No raw SQL or string interpolation of user input
+- [ ] Deep link URLs validated and sanitized before navigation
+
+### Network security:
+- [ ] HTTPS enforced for all API calls
+- [ ] Financial or health apps talking to a first-party backend without certificate pinning are flagged
+- [ ] Authentication tokens refreshed and expired properly
+- [ ] No sensitive data logged or printed
+
+---
+
+## 12. Error Handling
+
+### Framework error handling:
+- [ ] `FlutterError.onError` overridden to capture framework errors (build, layout, paint)
+- [ ] `PlatformDispatcher.instance.onError` set for async errors not caught by Flutter
+- [ ] `ErrorWidget.builder` customized for release mode (user-friendly instead of red screen)
+- [ ] Global error capture wrapper around `runApp` (e.g., `runZonedGuarded`, Sentry/Crashlytics wrapper)
+
+### Error reporting:
+- [ ] Error reporting service integrated (Firebase Crashlytics, Sentry, or equivalent)
+- [ ] Non-fatal errors reported with stack traces
+- [ ] State management error observer wired to error reporting (e.g., BlocObserver, ProviderObserver, or equivalent for your solution)
+- [ ] User-identifiable info (user ID) attached to error reports for debugging
+
+### Graceful degradation:
+- [ ] API errors result in user-friendly error UI, not crashes
+- [ ] Retry mechanisms for transient network failures
+- [ ] Offline state handled gracefully
+- [ ] Error states in state management carry error info for display
+- [ ] Raw exceptions (network, parsing) are mapped to user-friendly, localized messages before reaching the UI — never show raw exception strings to users
+
 ---
 
 ## 1. General Project Health
@@ -33,7 +87,7 @@ Severity is contextual — a hardcoded color is LOW in a prototype, HIGH in a th
 - [ ] Project follows consistent folder structure (feature-first or layer-first)
 - [ ] Proper separation of concerns: UI, business logic, data layers
 - [ ] No business logic in widgets; widgets are purely presentational
-- [ ] `pubspec.yaml` is clean — no unused dependencies, versions pinned appropriately
+- [ ] `pubspec.yaml` is clean — no unused dependencies; version constraints follow §10
 - [ ] `analysis_options.yaml` includes a strict lint set with strict analyzer settings enabled
 - [ ] No `print()` statements in production code — use `dart:developer` `log()` or a logging package
 - [ ] Generated files (`.g.dart`, `.freezed.dart`, `.gr.dart`) are up-to-date or in `.gitignore`
@@ -125,7 +179,7 @@ These principles apply to all Flutter state management solutions (BLoC, Riverpod
 - [ ] Mutually exclusive states use sealed types, union variants, or the solution's built-in async state type (e.g. Riverpod's `AsyncValue`) — not boolean flags (`isLoading`, `isError`, `hasData`)
 - [ ] Every async operation models loading, success, and error as distinct states
 - [ ] All state variants are handled exhaustively in UI — no silently ignored cases
-- [ ] Error states carry error information for display; loading states don't carry stale data
+- [ ] Error states carry error information for display; if a loading state carries the previous value (Riverpod keeps it by default — `skipLoadingOnRefresh` is `true`), the UI shows a refreshing indicator rather than presenting it as fresh
 - [ ] Nullable data is not used as a loading indicator — states are explicit
 
 ```dart
@@ -279,32 +333,6 @@ class UserError extends UserState {
 
 ---
 
-## 9. Security
-
-### Secure storage:
-- [ ] Sensitive data (tokens, credentials) stored using platform-secure storage (Keychain on iOS, EncryptedSharedPreferences on Android)
-- [ ] Never store secrets in plaintext storage
-- [ ] Biometric authentication gating considered for sensitive operations
-
-### API key handling:
-- [ ] API keys NOT hardcoded in Dart source — use `--dart-define`, `.env` files excluded from VCS, or compile-time configuration
-- [ ] Secrets not committed to git — check `.gitignore`
-- [ ] Backend proxy used for truly secret keys (client should never hold server secrets)
-
-### Input validation:
-- [ ] All user input validated before sending to API
-- [ ] Form validation uses proper validation patterns
-- [ ] No raw SQL or string interpolation of user input
-- [ ] Deep link URLs validated and sanitized before navigation
-
-### Network security:
-- [ ] HTTPS enforced for all API calls
-- [ ] Certificate pinning considered for high-security apps
-- [ ] Authentication tokens refreshed and expired properly
-- [ ] No sensitive data logged or printed
-
----
-
 ## 10. Package/Dependency Review
 
 ### Evaluating pub.dev packages:
@@ -341,29 +369,6 @@ class UserError extends UserState {
 - [ ] Deep link URLs validated and sanitized before navigation
 - [ ] Navigation state is testable — route changes can be verified in tests
 - [ ] Back behavior is correct on all platforms
-
----
-
-## 12. Error Handling
-
-### Framework error handling:
-- [ ] `FlutterError.onError` overridden to capture framework errors (build, layout, paint)
-- [ ] `PlatformDispatcher.instance.onError` set for async errors not caught by Flutter
-- [ ] `ErrorWidget.builder` customized for release mode (user-friendly instead of red screen)
-- [ ] Global error capture wrapper around `runApp` (e.g., `runZonedGuarded`, Sentry/Crashlytics wrapper)
-
-### Error reporting:
-- [ ] Error reporting service integrated (Firebase Crashlytics, Sentry, or equivalent)
-- [ ] Non-fatal errors reported with stack traces
-- [ ] State management error observer wired to error reporting (e.g., BlocObserver, ProviderObserver, or equivalent for your solution)
-- [ ] User-identifiable info (user ID) attached to error reports for debugging
-
-### Graceful degradation:
-- [ ] API errors result in user-friendly error UI, not crashes
-- [ ] Retry mechanisms for transient network failures
-- [ ] Offline state handled gracefully
-- [ ] Error states in state management carry error info for display
-- [ ] Raw exceptions (network, parsing) are mapped to user-friendly, localized messages before reaching the UI — never show raw exception strings to users
 
 ---
 
