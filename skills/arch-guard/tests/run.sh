@@ -94,7 +94,12 @@ conf '  # all:::extends StateNotifier:::被註解掉的規則'
 out=$(run); no "縮排過的註解行不生效" "被註解掉的規則" "$out"
 
 conf 'all:::extends StateNotifier:::no new:::^lib/core/'
-out=$(run); no "allow 路徑被排除" "lib/core/a.dart" "$out"
+out=$(run)
+no "allow 路徑被排除"           "lib/core/a.dart"        "$out"
+ok "allow 沒有把其餘一起濾光"   "lib/features/f1/a.dart" "$out"
+
+conf 'all:::(unclosed:::壞 pattern 要出聲'
+out=$(run); ok "all 模式的壞 pattern 不被吞掉" "unclosed" "$out"
 
 conf ''
 out=$(run); ok "CHOKEPOINTS 空時乾淨退出" "共 0 條違規" "$out"
@@ -107,7 +112,25 @@ out=$(run)
 ok "抓得到往上依賴"       "core → features" "$out"
 ok "抓得到 sibling 互 import" "f1 → f2"        "$out"
 
+echo "── 兩族規則並存 ──"
+LAYERS_V="features core"
+PART_V="features"
+conf 'all:::extends StateNotifier:::no new notifier'
+out=$(run)
+ok "並存時分層違規仍在"   "core → features"  "$out"
+ok "並存時必經點違規仍在" "no new notifier"  "$out"
+ok "計數把兩族加在一起"   "共 4 條違規"      "$out"
+
+LAYERS_V=""
+PART_V=""
+conf 'all:::extends StateNotifier:::no new notifier'
+ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" --strict >/dev/null 2>&1
+[ $? -eq 1 ] && { pass=$((pass + 1)); echo "  ok    --strict 對純必經點違規也 exit 1"; } || { fail=$((fail + 1)); echo "  FAIL  --strict 對純必經點違規應 exit 1"; }
+
 echo "── exit code ──"
+LAYERS_V="features core"
+PART_V="features"
+conf ''
 ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" --strict >/dev/null 2>&1
 [ $? -eq 1 ] && { pass=$((pass + 1)); echo "  ok    --strict 有違規時 exit 1"; } || { fail=$((fail + 1)); echo "  FAIL  --strict 應 exit 1"; }
 ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" >/dev/null 2>&1

@@ -20,7 +20,7 @@ description: >-
 
   | 想做的事 | 用這個 | 別靠這個 |
   |---|---|---|
-  | 列出現有 agent | `TaskStop` 丟一個**不可能撞名的哨兵 id**(如 `__probe__`),錯誤訊息會附 `Running teammates: ...`;再不行問使用者看 `/tasks` | `ListAgents` 回空**不代表沒有**;`TaskList` 列的是任務不是 agent |
+  | 列出現有 agent | `TaskStop` 丟一個**不可能撞名的哨兵 id**(如 `__probe__`),錯誤訊息會附 `Running teammates: ...`(claude-code 2.1.238 實測;**這是錯誤文案不是規格**,harness 改字就失效,回不出清單時別當作「沒有 agent」);再不行問使用者看 `/tasks` | `ListAgents` 回空**不代表沒有**;`TaskList` 列的是任務不是 agent |
   | 確認某個名字還在不在 | `SendMessage` 指名送一則,送得到就活著 | `TaskOutput` 只吃 task ID,不吃名字 |
   | 停掉 | `TaskStop`,吃名字,跨 session 也吃 | — |
 
