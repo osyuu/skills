@@ -109,6 +109,13 @@ say ""
 HEADING="## 決策記錄 + drift 防護"
 say "[4/5] CLAUDE 指標節（僅回報，不自動編輯）"
 FOUND_CLAUDE=no
+# 指標節只該有一份（共享 vs 本機擇一）。先掃一遍：任一檔已經有了，就別再對另一檔
+# 出「插進去」的 followup——照做會變成兩個檔各一份，正是本 skill 要防的漂移源。
+HAS_SECTION=no
+for f in CLAUDE.md CLAUDE.local.md; do
+  [ -f "$f" ] || continue
+  grep -q "sdd-harness:decision-log:start" "$f" 2>/dev/null && HAS_SECTION=yes
+done
 for f in CLAUDE.md CLAUDE.local.md; do
   [ -f "$f" ] || continue
   FOUND_CLAUDE=yes
@@ -117,7 +124,7 @@ for f in CLAUDE.md CLAUDE.local.md; do
   elif grep -qF "$HEADING" "$f" 2>/dev/null; then
     todo "$f 有本節標題但無 marker（可能被重寫工具洗掉）→ 原地更新、補回 marker，別重複注入。"
     add_followup "$f 的決策記錄節 marker 遺失：就地補回 <!-- sdd-harness:decision-log:start/end --> 包住既有內容，不要新增第二節。"
-  else
+  elif [ "$HAS_SECTION" = no ]; then
     todo "$f 存在但無指標節。"
     add_followup "把 $ASSETS/claude-section.md 的 marker 區塊插進 $f 適當位置，並填回寫目標 <TODO>。"
   fi
