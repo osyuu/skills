@@ -15,7 +15,11 @@ set -e
 SKILL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ASSETS="$SKILL_DIR/assets"
 
-[ -d .git ] || { echo "comment-budget: run from a git repo root (.git not found)"; exit 1; }
+# 不能用 `[ -d .git ]`：worktree 的 `.git` 是**檔案**，那樣寫會在 worktree 裡拒跑，
+# 而且錯誤訊息還說「找不到」——它就在那裡。
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+  echo "comment-budget: run from inside a git repo"; exit 1; }
+cd "$(git rev-parse --show-toplevel)"
 mkdir -p hooks
 
 cp "$ASSETS/comment-budget-check.sh" hooks/comment-budget-check.sh
@@ -40,17 +44,16 @@ if [ -f hooks/pre-commit ]; then
     # 不能無腦 append：dispatcher 常以頂層 `exit 0` 收尾，接在它後面的區塊
     # 永遠不會執行——裝了卻不觸發是最糟的失敗（看起來有守門，其實沒有）。
     # 有頂層 exit 就插在它之前，沒有才 append。
-    if awk '/^exit 0$/ { found = NR } END { exit !found }' hooks/pre-commit; then
-      LINE=$(awk '/^exit 0$/ { n = NR } END { print n }' hooks/pre-commit)
-      { head -n $((LINE - 1)) hooks/pre-commit
-        printf '%s\n\n' "$BLOCK"
-        tail -n +"$LINE" hooks/pre-commit
-      } > hooks/pre-commit.tmp && mv hooks/pre-commit.tmp hooks/pre-commit
-      echo "comment-budget: inserted checker call before the trailing 'exit 0'"
-    else
-      printf '\n%s\n' "$BLOCK" >> hooks/pre-commit
-      echo "comment-budget: appended checker call to existing hooks/pre-commit"
-    fi
+    # **插在最前面**（shebang 與檔頭註解之後）。既有的 pre-commit 不歸我們管，
+    # 它可能有中途的 early exit（條件不成立就 `exit 0`）；插在那後面等於平常都不會跑，
+    # 而那看起來跟「有守門」一模一樣。本區塊自己不 exit，所以放最前面不影響別人。
+    LINE=$(awk 'NR == 1 && /^#!/ { next } /^[[:space:]]*(#|$)/ { next } { print NR; exit }' hooks/pre-commit)
+    [ -n "$LINE" ] || LINE=$(( $(wc -l < hooks/pre-commit) + 1 ))
+    { head -n $((LINE - 1)) hooks/pre-commit
+      printf '%s\n\n' "$BLOCK"
+      tail -n +"$LINE" hooks/pre-commit
+    } > hooks/pre-commit.tmp && mv hooks/pre-commit.tmp hooks/pre-commit
+    echo "comment-budget: inserted checker call at the top of hooks/pre-commit"
   fi
 else
   printf '%s\n%s\n' '#!/bin/sh' "$BLOCK" > hooks/pre-commit
@@ -58,8 +61,16 @@ else
 fi
 chmod +x hooks/pre-commit
 
-git config core.hooksPath hooks
-echo "comment-budget: core.hooksPath → hooks"
+EXISTING_HP=$(git config --get core.hooksPath 2>/dev/null || true)
+if [ -n "$EXISTING_HP" ] && [ "$EXISTING_HP" != "hooks" ]; then
+  # 無條件覆寫會**靜默停用**既有佈線（husky/.githooks 之類），既有的 hook 從此不再跑。
+  echo "comment-budget: core.hooksPath 已是 '$EXISTING_HP' — 未更動；請把 hooks/pre-commit 的區塊併進該目錄"
+elif [ -x .git/hooks/pre-commit ]; then
+  echo "comment-budget: .git/hooks/pre-commit 存在會遮蔽 hooksPath — 未佈線；請先合併再自行 git config core.hooksPath hooks"
+else
+  git config core.hooksPath hooks
+  echo "comment-budget: core.hooksPath → hooks"
+fi
 
 echo
 echo "Next (agent / you):"

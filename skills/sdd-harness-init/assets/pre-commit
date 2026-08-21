@@ -12,9 +12,13 @@
 # That config is NOT version-controlled — fresh clones / new worktrees must
 # run it once (see the "決策記錄" section in this repo's CLAUDE.md).
 #
-# To make this BLOCK instead of warn: change the final `exit 0` to `exit 1`.
+# To make this BLOCK instead of warn: change the trailing `|| true` to `|| exit 1`.
 # Bypass any time with `git commit --no-verify`.
-
+#
+# **這整塊包在子 shell 裡**：共用同一支 pre-commit 時，區塊內的 `exit` 只能結束自己，
+# 不能把後面別人的檢查一起帶走。少了這層括號，本區塊的 early exit 會在最常見的狀態
+# （沒有待回寫的決策）把後面所有檢查靜默跳過——那看起來跟「對方沒裝」一模一樣。
+(
 LOG="docs/design/DECISIONS.md"
 [ -f "$LOG" ] || exit 0
 
@@ -27,6 +31,5 @@ printf '\033[33m⚠  decision-log 有未回寫的決策（%s）：\033[0m\n' "$L
 printf '%s\n' "$PENDING" | sed 's/^/    /'
 printf '\033[33m   → 回寫進對應權威文件後把 - [ ] 改 - [x]（或 - [~] 明確延後）。\033[0m\n'
 printf '\033[33m   （僅提醒、不阻擋 commit；push/merge 前務必 drain 完。）\033[0m\n'
-
-exit 0
+) || true
 # <<< sdd-harness decision-log <<<
