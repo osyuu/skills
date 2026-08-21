@@ -65,6 +65,8 @@ echo "arch-guard: core.hooksPath → hooks"
 
 echo
 echo "Next (agent / you):"
-echo "  1. Fill hooks/arch-layers.conf (PACKAGE, LAYERS top→bottom, PARTITIONED)."
+echo "  1. Fill hooks/arch-layers.conf (PACKAGE, LAYERS top→bottom, PARTITIONED),"
+echo "     and CHOKEPOINTS if the repo has 'must go through X' rules worth grepping."
 echo "  2. Run: sh hooks/arch-guard-check.sh --audit   # see current violations"
+echo "     Pick each chokepoint's mode from what this reports: 0 hits -> all, debt -> new."
 echo "  3. Add the layering section to CLAUDE.md (assets/claude-md-arch-section.md)."
