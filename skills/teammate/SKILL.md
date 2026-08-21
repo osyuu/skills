@@ -16,13 +16,13 @@ description: >-
 
 ## 一、開之前
 
-- **先盤點現有的**(列不出來就問使用者)。名稱衝突會長 `-2`(identity 分裂)。有對口就 `SendMessage` 復用,別重開。
+- **先盤點現有的**。名稱衝突會長 `-2`(identity 分裂)。有對口就 `SendMessage` 復用,別重開。
 
   | 想做的事 | 用這個 | 別靠這個 |
   |---|---|---|
-  | 列出現有 agent | `TaskStop` 丟一個不存在的 id,錯誤訊息會附 `Running teammates: ...`;再不行問使用者看 `/tasks` | `ListAgents` 回空**不代表沒有**;`TaskList` 列的是任務不是 agent |
-  | 確認某個名字還在不在 | `SendMessage` 指名送一則,送得到就活著 | — |
-  | 停掉 | `TaskStop`,吃名字,跨 session 也吃 | `TaskOutput` 只吃 task ID,不吃名字 |
+  | 列出現有 agent | `TaskStop` 丟一個**不可能撞名的哨兵 id**(如 `__probe__`),錯誤訊息會附 `Running teammates: ...`;再不行問使用者看 `/tasks` | `ListAgents` 回空**不代表沒有**;`TaskList` 列的是任務不是 agent |
+  | 確認某個名字還在不在 | `SendMessage` 指名送一則,送得到就活著 | `TaskOutput` 只吃 task ID,不吃名字 |
+  | 停掉 | `TaskStop`,吃名字,跨 session 也吃 | — |
 
   **上個 session 留下的 teammate 對新 session 是隱形的**——不在 `ListAgents`、不在你的 spawn 記錄裡,上面那招也只確認得到本 session 的。所以盤點的最後一步還是得問使用者;不問就會在它們還掛著的時候又開一輪。
 

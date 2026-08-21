@@ -2,9 +2,9 @@
 name: arch-guard
 description: >-
   把「依賴只准往下」的分層架構用 pre-commit 檢查鎖進任一 repo：宣告層順序後，git grep
-  抓出往上依賴、feature→feature、跨層違規，warn 不擋（可切 --strict 給 CI）。也守**必經點**
+  抓出往上依賴、feature→feature、跨層違規，warn 不擋（可切 --strict 給 CI）。也守必經點
   ——「這條路只准經過某個入口」「不得再新增 X」「不得在 Y 以外出現」這類方向合法、卻繞過閘的
-  規則，有存量債的可設成只看新增行。當使用者說「加分層檢查 / 架構分層守門 / 強制 clean
+  規則。當使用者說「加分層檢查 / 架構分層守門 / 強制 clean
   architecture 層 / 禁止往上 import / 阻止 feature 互相依賴 / 鎖住依賴方向 / 禁止直呼某個
   service / 只准走某個入口 / 不准再新增某個東西 / 把 CLAUDE.md 的禁令變成檢查 / layering
   guard / dependency direction / import boundary / chokepoint / arch lint / 把規則放進 hook
@@ -26,7 +26,7 @@ description: >-
 - **依賴只准往下**：層排成全序（top → bottom），一層只能 import 更低層。往上 import、同層 sibling 互 import（如 feature→feature）都禁止。最底層是**葉子**（領域無關、誰都不 import 上層）。
 - **共享要下沉、別橫向**：兩個上層單元都要用的東西 → 下沉到共同的下層。**≥2 個上層單元消費 → 下沉**；領域**無關**沉到最底層、領域**感知**沉到中間共享層。單一 owner 的留在自己的單元。
 - **必經點是另一類不變式**：分層守「誰可以認得誰」，但很多規則守的是「這條路必須經過某個閘」——`presentation` 直呼 `core` 方向合法，分層規則永遠不會吭聲。這類同樣可 grep，同樣該自動化，只是要另外宣告（`CHOKEPOINTS`）。
-- **有債的規則要只看新增行**。門檻由現況決定：`--audit` 出來 0 筆 → `all`（鎖住別退化）；已有幾十筆 → `new`（否則每次 commit 噴一整頁，噴幾次就沒人看，等於沒有守門）。
+- **模式由現況決定，不是偏好**：現在 0 筆的規則鎖 `all`，已有存量債的設 `new`（理由與寫法見 conf 模板註解）。
 - **warn 不擋**：pre-commit 只提醒、不阻止 commit（別擋 WIP）；硬擋留給 CI / pre-push（`--strict`）。既有違規當「待清債」列出來，不強迫一次清完。
 
 ## 流程

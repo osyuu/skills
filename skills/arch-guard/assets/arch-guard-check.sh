@@ -6,6 +6,9 @@
 # layers BELOW it. Upward imports, and (for PARTITIONED layers) imports between
 # sibling sub-modules, are violations.
 #
+# CHOKEPOINTS rules (optional) flag lines that bypass a required entry point.
+# Those are direction-legal, so the layering rules never see them.
+#
 # Modes:
 #   (default)   warn-only — print violations, exit 0. For pre-commit.
 #   --strict    exit 1 if any violation (for CI / pre-push).
