@@ -15,7 +15,15 @@
 # 三個訊號，全部 warn-only。門檻用環境變數或 hooks/comment-budget.conf 覆寫。
 # `git commit --no-verify` 可整支跳過。
 
+# 先接住環境變數：conf 也是設同名變數，source 在後會把它蓋掉——
+# 於是「用環境變數覆寫」在裝了 conf 之後（也就是永遠）失效。
+_e_block=${COMMENT_BLOCK_MAX:-}
+_e_ratio=${COMMENT_RATIO_MAX:-}
+_e_min=${COMMENT_RATIO_MIN_LINES:-}
 [ -f hooks/comment-budget.conf ] && . ./hooks/comment-budget.conf
+[ -n "$_e_block" ] && COMMENT_BLOCK_MAX=$_e_block
+[ -n "$_e_ratio" ] && COMMENT_RATIO_MAX=$_e_ratio
+[ -n "$_e_min" ] && COMMENT_RATIO_MIN_LINES=$_e_min
 
 BLOCK_MAX=${COMMENT_BLOCK_MAX:-10}
 RATIO_MAX=${COMMENT_RATIO_MAX:-40}
@@ -33,8 +41,26 @@ prefix_for() {
     echo ''
 }
 
+# 手動跑時 cwd 可能在子目錄：conf 載不到、路徑也對不上，結果是靜默 exit 0。
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)" || exit 0
+
 FILES=$(git diff --cached --name-only --diff-filter=ACM)
 [ -z "$FILES" ] && exit 0
+
+# 門檻不是數字的話 `[ ]` 會噴 integer expression 然後那個檢查整個不觸發——
+# 而「不觸發」跟「沒問題」的輸出一模一樣。退回預設並出聲。
+for v in BLOCK_MAX RATIO_MAX RATIO_MIN_LINES; do
+    eval "cur=\$$v"
+    case "$cur" in
+        ''|*[!0-9]*)
+            printf '\033[33m⚠  comment-budget：%s=%s 不是數字，改用預設\033[0m\n' "$v" "$cur"
+            case "$v" in
+                BLOCK_MAX) BLOCK_MAX=10 ;;
+                RATIO_MAX) RATIO_MAX=40 ;;
+                RATIO_MIN_LINES) RATIO_MIN_LINES=15 ;;
+            esac ;;
+    esac
+done
 
 WARNED=0
 warn_header() {
@@ -42,14 +68,25 @@ warn_header() {
     WARNED=1
 }
 
-for f in $FILES; do
+# **檔名清單走檔案重導向**：`for f in $FILES` 對含空白的檔名會 word-split 掉，
+# 而把 IFS 改成換行會連帶讓 prefix_for 裡的副檔名清單也不再切分（整個比對失效）。
+# `while … done < file` 不是 pipeline，不會進子 shell，WARNED 跨得回來。
+LIST=$(mktemp)
+trap 'rm -f "$LIST"' EXIT
+printf '%s\n' "$FILES" > "$LIST"
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
     P=$(prefix_for "$f")
     [ -z "$P" ] && continue
 
-    ADDED=$(git diff --cached -U0 -- "$f" | grep '^+' | grep -v '^+++')
+    # **保留 hunk header**：`-U0` 濾掉邊界後，散落各處的短註解會被串成一個
+    # 假的長區塊。`^@@` 要把連續計數歸零。
+    ADDED=$(git diff --cached -U0 -- "$f" | grep -E '^(\+|@@)' | grep -v '^+++')
     [ -z "$ADDED" ] && continue
 
     STATS=$(printf '%s\n' "$ADDED" | awk -v P="$P" '
+        /^@@/ { run = 0; next }
         {
             l = substr($0, 2); sub(/^[ \t]+/, "", l)
             if (index(l, P) == 1) { cmt++; run++; if (run > maxrun) maxrun = run }
@@ -96,7 +133,7 @@ for f in $FILES; do
         printf '%s\n' "$PROCESS" | cut -c1-100 | sed 's/^/         /'
         printf '       → 沒有讀者需要知道你怎麼驗的。留下結論與約束，過程進 commit message。\n'
     fi
-done
+done < "$LIST"
 
 [ "$WARNED" -eq 1 ] && \
     printf '\033[33m   （僅提醒、不阻擋。門檻見 hooks/comment-budget.conf。）\033[0m\n'
