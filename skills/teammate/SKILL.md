@@ -16,8 +16,16 @@ description: >-
 
 ## 一、開之前
 
-- **先盤點現有的**。名稱衝突會長 `-2`(identity 分裂)。有對口就 `SendMessage` 復用,別重開。
-  > ⚠️ **`TaskList` 查的是任務、不是 agent**——沒有工單時它回「No tasks found」,那**不代表沒有活著的 agent**。踩過:據此判定「沒有現存 teammate」就開了新一輪,結果上一輪四個還掛著。沒有列 agent 的工具時,靠自己的 spawn 記錄逐一點名。
+- **先盤點現有的**(列不出來就問使用者)。名稱衝突會長 `-2`(identity 分裂)。有對口就 `SendMessage` 復用,別重開。
+
+  | 想做的事 | 用這個 | 別靠這個 |
+  |---|---|---|
+  | 列出現有 agent | `TaskStop` 丟一個不存在的 id,錯誤訊息會附 `Running teammates: ...`;再不行問使用者看 `/tasks` | `ListAgents` 回空**不代表沒有**;`TaskList` 列的是任務不是 agent |
+  | 確認某個名字還在不在 | `SendMessage` 指名送一則,送得到就活著 | — |
+  | 停掉 | `TaskStop`,吃名字,跨 session 也吃 | `TaskOutput` 只吃 task ID,不吃名字 |
+
+  **上個 session 留下的 teammate 對新 session 是隱形的**——不在 `ListAgents`、不在你的 spawn 記錄裡,上面那招也只確認得到本 session 的。所以盤點的最後一步還是得問使用者;不問就會在它們還掛著的時候又開一輪。
+
 - **按任務性質分 model**:async/併發/生命週期/測試 harness → 強模型;規格鎖死的機械 UI → 輕模型。
 - **大改跨檔用 worktree 隔離**,主 tree 保持穩定給別的並行工作(QA/截圖)。
 
@@ -76,7 +84,7 @@ description: >-
 
 至於該不該關:後續**已具體化**才指派保溫;後續存在但未具體化(如等 review 結果)視同無後續 → stop。**絕不留 idle-未指派**(會漂移、自認領亂改)。
 
-**但「交付後留著待追問」是有終點的,別只執行前半。** 使用者常想對 review agent 追問細節,所以剛交付時該留;可是話題一收尾(發現全部修完、或轉去做別的事)就該關。踩過:一輪 review 的四個 agent 說「留著待追問」之後**再也沒回頭檢視**,掛了好幾小時,最後是使用者問「怎麼還這麼多掛著」才清掉。**天然的檢視點就是「我要 spawn 新 agent 的時候」**——那本來就要盤點(見一、),開新一輪 review 時上一輪的通常就該關了,不用另外記得。stop≈免費、真 idle 不燒 token、成本在 re-spawn 重載——stop 是擋 drift,不是省 token。stop 用 `shutdown_request`,口頭「請停工」擋不住 idle 迴圈。
+**但「交付後留著待追問」是有終點的,別只執行前半。** 使用者常想對 review agent 追問細節,所以剛交付時該留;可是話題一收尾(發現全部修完、或轉去做別的事)就該關。踩過:一輪 review 的四個 agent 說「留著待追問」之後**再也沒回頭檢視**,掛了好幾小時,最後是使用者問「怎麼還這麼多掛著」才清掉。**天然的檢視點就是「我要 spawn 新 agent 的時候」**——那本來就要盤點(見一、),開新一輪 review 時上一輪的通常就該關了,不用另外記得。stop≈免費、真 idle 不燒 token、成本在 re-spawn 重載——stop 是擋 drift,不是省 token。stop 用 `shutdown_request`,口頭「請停工」擋不住 idle 迴圈;**上個 session 遺留、已經沒有對話脈絡可談的,直接 `TaskStop` 指名關掉**。
 
 ## 五、規格中途大改
 
