@@ -57,7 +57,8 @@ sh hooks/arch-guard-check.sh --audit
 ## checker 行為（`hooks/arch-guard-check.sh`）
 
 - 讀 `hooks/arch-layers.conf`，對每層 grep「有沒有 import 更高層」+ 對 `PARTITIONED` 層 grep「sibling 互 import」+ 逐條跑 `CHOKEPOINTS`。
-- `CHOKEPOINTS` 的 `all` 走 `git grep` 掃工作樹；`new` 走 `git diff --cached` 只取新增行（所以它在 `--audit` 手動跑時通常是空的，那是預期）。
+- `CHOKEPOINTS` 的 `all` 走 `git grep` 掃工作樹；`new` 走 `git diff --cached` 只取新增行（所以它在 `--audit` 手動跑時通常是空的，那是預期）。**兩個模式的 pattern 語意必須一致**，否則「先用 `all` audit、再切 `new`」這條流程本身就會製造靜默失效。
+- config 格式錯（欄位數不對、mode 拼錯）會**出聲並跳過那一行**，不會靜默降級成一條永不開火的規則。
 - 預設 **warn-only、exit 0**（pre-commit 用）；`--strict` 有違規則 exit 1（CI / pre-push）；`--audit` 印違規 + 每輪計數。
 - git grep 掃工作樹（tracked 檔），確定性、無副作用。
 

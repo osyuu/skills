@@ -71,25 +71,50 @@ for layer in $PARTITIONED; do
 done
 
 # ── 必經點：方向合法、卻繞過了指定入口 ────────────────────────────────────
-# 一行一條：<mode>|<pattern>|<allow-path-regex>|<label>
+# 一行一條：<mode>:::<pattern>:::<label>[:::<allow-path-regex>]
 #   all — 整棵工作樹都不准出現（用在現在乾淨的規則）
 #   new — 只看這次 staged 的新增行（用在有存量債的規則）
+# 分隔符是 ::: 而非 |，因為 | 是 ERE 的 alternation：用 | 當分隔會把 `(A|B)`
+# 這種 pattern 切成兩半而且不報錯。**可選的 allow 放最後**，這樣省略它就是少一個
+# 欄位，不會出現連續分隔符（那種寫法沒人打得對）。
 old_ifs=$IFS
 IFS='
 '
 for rule in $CHOKEPOINTS; do
+  rule=$(printf '%s' "$rule" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   case "$rule" in ''|'#'*) continue ;; esac
-  cmode=${rule%%|*}; rest=${rule#*|}
-  pat=${rest%%|*};   rest=${rest#*|}
-  allow=${rest%%|*}; label=${rest#*|}
+
+  # 欄位數不足會静默降級（allow 被推導成 pat，把所有命中滤光），所以先验再拆。
+  nf=$(printf '%s' "$rule" | awk -F':::' '{print NF}')
+  if [ "$nf" -ne 3 ] && [ "$nf" -ne 4 ]; then
+    printf "${YEL}⚠  arch-guard config：栏位数不是 3 或 4（mode:::pattern:::label[:::allow]），已跳过${RST}\n    %s\n" "$rule"
+    continue
+  fi
+  cmode=$(printf '%s' "$rule" | awk -F':::' '{print $1}')
+  pat=$(printf   '%s' "$rule" | awk -F':::' '{print $2}')
+  label=$(printf '%s' "$rule" | awk -F':::' '{print $3}')
+  allow=$(printf '%s' "$rule" | awk -F':::' '{print $4}')
   [ -z "$pat" ] && continue
+  case "$cmode" in
+    all|new) ;;
+    *) printf "${YEL}⚠  arch-guard config：mode 只能是 all 或 new，已跳过：%s${RST}\n" "$rule"
+       continue ;;
+  esac
 
   if [ "$cmode" = "new" ]; then
-    hits=$(git diff --cached -U0 -- "$ROOT" 2>/dev/null | awk -v pat="$pat" '
+    # **先剝掉 diff 的 `+` 再比對**，否則 `^` 锚点永远配不到，而规则会静默失效。
+    # pattern 走 ENVIRON 传：`awk -v` 会对值做跳脱处理，把 `\.` 塌成 `.`，
+    # 于是同一条 pattern 在 all 与 new 两个模式意思不一样。
+    hits=$(git diff --cached -U0 -- "$ROOT" 2>/dev/null | PAT="$pat" awk '
       /^\+\+\+ b\// { f = substr($0, 7); next }
-      /^\+/ && $0 !~ /^\+\+\+/ { if ($0 ~ pat) print f ": " substr($0, 2) }')
+      /^\+/ && $0 !~ /^\+\+\+/ {
+        line = substr($0, 2)
+        if (line ~ ENVIRON["PAT"]) print f ": " line
+      }')
   else
-    hits=$(git grep -nE "$pat" -- "$ROOT" 2>/dev/null)
+    # 不吞 stderr：坏 pattern 要出声。静默回 0 笔会诱导作者把规则设成 all，
+    # 得到一道永远不开火的守门。
+    hits=$(git grep -nE "$pat" -- "$ROOT")
   fi
   hits=$(printf '%s\n' "$hits" | grep -v "$IGNORE" | grep -v '^$')
   [ -n "$allow" ] && hits=$(printf '%s\n' "$hits" | grep -vE "$allow" | grep -v '^$')
