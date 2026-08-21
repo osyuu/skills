@@ -98,6 +98,8 @@ out=$(run)
 no "allow 路徑被排除"           "lib/core/a.dart"        "$out"
 ok "allow 沒有把其餘一起濾光"   "lib/features/f1/a.dart" "$out"
 
+# needle 是 pattern **自身被回顯**（regcomp 系的慣例會把壞 pattern 印回來），
+# 不是 git 的文案——別拿「不要耦合在別人的訊息格式上」把這條改掉。
 conf 'all:::(unclosed:::壞 pattern 要出聲'
 out=$(run); ok "all 模式的壞 pattern 不被吞掉" "unclosed" "$out"
 
