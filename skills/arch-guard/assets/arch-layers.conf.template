@@ -27,3 +27,22 @@ PARTITIONED="<TODO-e.g. features>"
 
 # grep -v pattern for generated/ignored files (basic regex, \| to alternate).
 IGNORE='\.g\.dart\|\.freezed'
+
+# ── 必經點規則（選用，留空就不啟用）──────────────────────────────────
+# 分層守的是**方向**；這裡守的是「這條路必須經過某個閘」——方向合法、卻繞過了
+# 指定入口的呼叫，上面的規則抓不到（`presentation` 直呼 `core` 是往下，合法）。
+#
+# 一行一條，欄位用 | 分隔：
+#   <mode>|<grep -E pattern>|<允許出現的路徑 regex，留空=完全禁止>|<給人看的說明>
+#
+# mode 由**現況**決定，不是偏好——先 `--audit` 看那條規則現在幾筆：
+#   all — 整棵工作樹都不准出現。用在**現在是 0 筆**的規則，鎖住它別退化。
+#   new — 只看這次 staged 的新增行。用在**已有存量債**的規則；整樹掃會每次噴
+#         幾十行，噴幾次就沒人看了，那等於沒有守門。
+#
+# 例（同一份 CLAUDE.md 裡的兩條規則，現況不同、模式就不同）：
+# CHOKEPOINTS="
+# all|DioException|^lib/core/network/|業務層只面向 AppException，dio 例外不得外洩
+# new|extends StateNotifier||不要再新增 StateNotifier（存量只維護）
+# "
+CHOKEPOINTS=""

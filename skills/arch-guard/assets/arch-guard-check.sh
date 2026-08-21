@@ -36,7 +36,7 @@ report() {  # $1=label  $2=hits(multiline)
   [ -z "$2" ] && return 0
   n=$(printf '%s\n' "$2" | grep -c .)
   count=$((count + n))
-  printf "${YEL}⚠  分層違規：%s${RST}\n" "$1"
+  printf "${YEL}⚠  %s${RST}\n" "$1"
   printf '%s\n' "$2" | sed 's/^/    /'
 }
 
@@ -52,7 +52,7 @@ for layer in $LAYERS; do
   done
   for h in $higher; do
     hits=$(git grep -nE "$(re_for "$h")" -- "$ROOT/$layer" 2>/dev/null | grep -v "$IGNORE")
-    report "$layer → $h 往上依賴（禁止）" "$hits"
+    report "分層違規：$layer → $h 往上依賴（禁止）" "$hits"
   done
 done
 
@@ -67,8 +67,35 @@ for layer in $PARTITIONED; do
       [ "$src" != "$tgt" ] && printf '%s → %s  (%s)\n' "$src" "$tgt" "$file"
     done
   )
-  report "$layer → $layer sibling 互 import（禁止，共享請下沉低層）" "$hits"
+  report "分層違規：$layer → $layer sibling 互 import（禁止，共享請下沉低層）" "$hits"
 done
+
+# ── 必經點：方向合法、卻繞過了指定入口 ────────────────────────────────────
+# 一行一條：<mode>|<pattern>|<allow-path-regex>|<label>
+#   all — 整棵工作樹都不准出現（用在現在乾淨的規則）
+#   new — 只看這次 staged 的新增行（用在有存量債的規則）
+old_ifs=$IFS
+IFS='
+'
+for rule in $CHOKEPOINTS; do
+  case "$rule" in ''|'#'*) continue ;; esac
+  cmode=${rule%%|*}; rest=${rule#*|}
+  pat=${rest%%|*};   rest=${rest#*|}
+  allow=${rest%%|*}; label=${rest#*|}
+  [ -z "$pat" ] && continue
+
+  if [ "$cmode" = "new" ]; then
+    hits=$(git diff --cached -U0 -- "$ROOT" 2>/dev/null | awk -v pat="$pat" '
+      /^\+\+\+ b\// { f = substr($0, 7); next }
+      /^\+/ && $0 !~ /^\+\+\+/ { if ($0 ~ pat) print f ": " substr($0, 2) }')
+  else
+    hits=$(git grep -nE "$pat" -- "$ROOT" 2>/dev/null)
+  fi
+  hits=$(printf '%s\n' "$hits" | grep -v "$IGNORE" | grep -v '^$')
+  [ -n "$allow" ] && hits=$(printf '%s\n' "$hits" | grep -vE "$allow" | grep -v '^$')
+  report "必經點：$label" "$hits"
+done
+IFS=$old_ifs
 
 # ── tail ─────────────────────────────────────────────────────────────────
 if [ "$mode" = "audit" ]; then
@@ -76,7 +103,7 @@ if [ "$mode" = "audit" ]; then
   exit 0
 fi
 if [ "$count" -gt 0 ]; then
-  printf "${YEL}   （arch-guard：依賴只准往下；共享請下沉低層，別橫向/往上）${RST}\n"
+  printf "${YEL}   （arch-guard：依賴只准往下、共享請下沉低層；必經點不可繞過）${RST}\n"
   [ "$mode" = "strict" ] && exit 1
 fi
 exit 0

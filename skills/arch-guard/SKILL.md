@@ -2,11 +2,13 @@
 name: arch-guard
 description: >-
   把「依賴只准往下」的分層架構用 pre-commit 檢查鎖進任一 repo：宣告層順序後，git grep
-  抓出往上依賴、feature→feature、跨層違規，warn 不擋（可切 --strict 給 CI）。當使用者說
-  「加分層檢查 / 架構分層守門 / 強制 clean architecture 層 / 禁止往上 import / 阻止
-  feature 互相依賴 / 鎖住依賴方向 / layering guard / dependency direction / import
-  boundary / arch lint / 把分層規則放進 hook 或 CI」，或想把某個 repo 的分層不變式變成
-  可機械偵測的守門時，主動使用。泛用（任何語言/package，靠 config 參數化），與
+  抓出往上依賴、feature→feature、跨層違規，warn 不擋（可切 --strict 給 CI）。也守**必經點**
+  ——「這條路只准經過某個入口」「不得再新增 X」「不得在 Y 以外出現」這類方向合法、卻繞過閘的
+  規則，有存量債的可設成只看新增行。當使用者說「加分層檢查 / 架構分層守門 / 強制 clean
+  architecture 層 / 禁止往上 import / 阻止 feature 互相依賴 / 鎖住依賴方向 / 禁止直呼某個
+  service / 只准走某個入口 / 不准再新增某個東西 / 把 CLAUDE.md 的禁令變成檢查 / layering
+  guard / dependency direction / import boundary / chokepoint / arch lint / 把規則放進 hook
+  或 CI」，或想把某個 repo 的架構不變式變成可機械偵測的守門時，主動使用。泛用（任何語言/package，靠 config 參數化），與
   sdd-harness-init（decision-log drift）互補、共用同一個 pre-commit。純寫應用 code、或
   只是解釋架構概念（沒有要裝守門）時不要用。
 ---
@@ -23,6 +25,8 @@ description: >-
 
 - **依賴只准往下**：層排成全序（top → bottom），一層只能 import 更低層。往上 import、同層 sibling 互 import（如 feature→feature）都禁止。最底層是**葉子**（領域無關、誰都不 import 上層）。
 - **共享要下沉、別橫向**：兩個上層單元都要用的東西 → 下沉到共同的下層。**≥2 個上層單元消費 → 下沉**；領域**無關**沉到最底層、領域**感知**沉到中間共享層。單一 owner 的留在自己的單元。
+- **必經點是另一類不變式**：分層守「誰可以認得誰」，但很多規則守的是「這條路必須經過某個閘」——`presentation` 直呼 `core` 方向合法，分層規則永遠不會吭聲。這類同樣可 grep，同樣該自動化，只是要另外宣告（`CHOKEPOINTS`）。
+- **有債的規則要只看新增行**。門檻由現況決定：`--audit` 出來 0 筆 → `all`（鎖住別退化）；已有幾十筆 → `new`（否則每次 commit 噴一整頁，噴幾次就沒人看，等於沒有守門）。
 - **warn 不擋**：pre-commit 只提醒、不阻止 commit（別擋 WIP）；硬擋留給 CI / pre-push（`--strict`）。既有違規當「待清債」列出來，不強迫一次清完。
 
 ## 流程
@@ -39,6 +43,7 @@ sh <skill-dir>/scripts/install.sh
 - `IMPORT_RE` 依語言調（模板給了 Dart / TS / Python 範例）；**保留 `{LAYER}` 佔位與結尾 `/`**（避免 `data` 誤中 `database/`）。
 - `PARTITIONED` 填「被切成 sibling 不准互 import」的層（feature-first 通常填 `features`）。
 - **缺規格別腦補**：層邊界模糊就回報使用者，別硬分。
+- `CHOKEPOINTS` 從該 repo 的 CLAUDE.md／conventions 撈「可 grep 的禁令」填（「只准經過 X」「不得再新增 Y」「不得在 Z 出現」）。**每條先單獨 `--audit` 一次再決定 `all`／`new`**。
 
 **3. 跑 audit 看現況**：
 ```
@@ -51,7 +56,8 @@ sh hooks/arch-guard-check.sh --audit
 
 ## checker 行為（`hooks/arch-guard-check.sh`）
 
-- 讀 `hooks/arch-layers.conf`，對每層 grep「有沒有 import 更高層」+ 對 `PARTITIONED` 層 grep「sibling 互 import」。
+- 讀 `hooks/arch-layers.conf`，對每層 grep「有沒有 import 更高層」+ 對 `PARTITIONED` 層 grep「sibling 互 import」+ 逐條跑 `CHOKEPOINTS`。
+- `CHOKEPOINTS` 的 `all` 走 `git grep` 掃工作樹；`new` 走 `git diff --cached` 只取新增行（所以它在 `--audit` 手動跑時通常是空的，那是預期）。
 - 預設 **warn-only、exit 0**（pre-commit 用）；`--strict` 有違規則 exit 1（CI / pre-push）；`--audit` 印違規 + 每輪計數。
 - git grep 掃工作樹（tracked 檔），確定性、無副作用。
 
@@ -63,4 +69,5 @@ arch-guard 只管**分層方向**（架構專屬、靠 config 參數化）。若
 
 - checker 靠 **import 字串裡出現層目錄名**來判斷（`IMPORT_RE`）。package/path 前綴式 import（Dart `package:`、TS alias/相對路徑、Python 模組路徑）都能配；**完全動態的 import 或反射式依賴抓不到**。
 - `PARTITIONED` 的 sibling 抽取假設 path-style（`.../<layer>/<sibling>/...`）；非此形狀的語言要改 checker 的 sed，v1 以 path-prefix 為準。
-- 它擋的是**方向**，不是「這個東西該不該存在於這層」的語義——後者仍靠 CLAUDE.md 規則 + review。
+- 分層規則擋的是**方向**，不是「這個東西該不該存在於這層」的語義。`CHOKEPOINTS` 補得了其中**可字面偵測**的那部分；判斷「這次該不該讓步」仍然是人/agent 的事。
+- `CHOKEPOINTS` 是純文字 grep：分不出合法例外，所以才有 allow 欄位（填該規則的唯一合法出口路徑）。它也會掃到 `ROOT` 底下的非源碼檔（`.md` 範例會中），需要時把副檔名寫進 pattern 或 `IGNORE`。
