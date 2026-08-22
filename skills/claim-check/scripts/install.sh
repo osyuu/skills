@@ -15,7 +15,7 @@ else
   echo "  ✓ 寫入 $DEST/hooks/claim-check.py"
 fi
 
-python3 - "$SETTINGS" "$DEST" <<'PY'
+if python3 - "$SETTINGS" "$DEST" <<'PY'
 import json, os, sys
 p, dest = sys.argv[1], sys.argv[2]
 d = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
@@ -37,6 +37,14 @@ else:
     json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print("  ✓ 已註冊 Stop hook" + (f"（原檔備份為 {os.path.basename(p)}.bak）" if backed else ""))
 PY
+then :
+else
+    # **失敗必須出聲並停下。** 印完 checker 就繼續往下印「後續步驟」，
+    # 使用者會以為裝好了，而 hook 從頭到尾沒註冊——那跟沒裝一樣，但更難察覺。
+    echo "  ✗ 讀不動 ${SETTINGS}（JSON 壞了？），Stop hook 沒有註冊。修好再重跑。"  # 大括號不可省：$SETTINGS（ 會被當成變數名
+    echo "    檔案未被改動。"
+    exit 1
+fi
 
 cat <<'MSG'
 

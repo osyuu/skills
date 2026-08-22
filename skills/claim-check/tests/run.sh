@@ -115,5 +115,28 @@ ok "既有的 Stop hook 要留著" "FOREIGN" "$both"
 ok "自己的也要加進去" "claim-check" "$both"
 rm -rf "$H1" "$H2"
 
+# 別的 hook 事件與其他設定不能被動到。
+H3=$(mktemp -d)
+python3 -c "
+import json
+json.dump({'model':'opus','hooks':{
+ 'PreToolUse':[{'matcher':'Bash','hooks':[{'type':'command','command':'echo PRE'}]}]}},
+          open('$H3/settings.json','w'))"
+CLAIM_CHECK_HOME="$H3" sh "$INST" >/dev/null 2>&1
+after=$(cat "$H3/settings.json")
+ok "別的 hook 事件要留著" "PRE" "$after"
+ok "非 hooks 的設定要留著" "opus" "$after"
+
+# settings.json 壞掉時**必須出聲並停下**。印完 checker 就繼續往下的話，
+# 使用者會以為裝好了，而 hook 從頭到尾沒註冊——跟沒裝一樣，但更難察覺。
+H4=$(mktemp -d)
+printf '{ "model": "opus",  // 註解\n}\n' > "$H4/settings.json"
+out=$(CLAIM_CHECK_HOME="$H4" sh "$INST" 2>&1)
+ok "壞 JSON 要講出來" "沒有註冊" "$out"
+no "壞 JSON 不該還印後續步驟" "先跑 warn" "$out"
+ok "壞 JSON 時原檔不動" "// 註解" "$(cat "$H4/settings.json")"
+rm -rf "$H3" "$H4"
+
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
