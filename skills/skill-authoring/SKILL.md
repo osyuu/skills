@@ -85,8 +85,11 @@ description 決定「會不會被觸發」,勝過 body 裡任何內容。三個�
 1. skill 目錄放 `skills/<skill-name>/`,至少含 `SKILL.md`;附屬檔進各自的 `references/`、`assets/`、`scripts/`。
 2. 在 `.claude-plugin/marketplace.json` 的 `plugins[]` **加一筆**:`{ "name": "<skill-name>", "source": "./", "skills": ["./skills/<skill-name>"] }`。獨立一個 plugin = 可被選擇性安裝。
 3. **push 到 main 就會傳播**:marketplace 註冊時預設 `autoUpdate: true`,各機**下次啟動時自動拉最新 commit**(github-source 追的是 git HEAD,不是 `metadata.version`)。所以主流程是「改 → commit → push」,不必手動叫別台更新。`metadata.version` 照樣 bump,但它是**人類可讀的變更標記,不是觸發條件**;要當下就生效(不等重啟)才手動 `/plugin update`。
-4. **去重本機**:若 `~/.claude/skills/<skill-name>` 還有同名實體目錄,改用 plugin 後會兩份打架——移除本機那份,只從 plugin 載。
-5. 用 `assets/skill-template.md` 當新 skill 的骨架起手。
+4. ⚠️ **改動只對「新 session」生效,已經在跑的 session 拿不到。** skill 全文是在**被叫用的那一刻**抓進對話的,之後不會換——所以一個開很久的 session 會一路照著當初那份工作,而你以為它看得到你剛 push 的版本。**兩邊都沒有任何訊號。** 實測踩過:一個 7/24 開的 session,到 8/22 仍在照 8/5 的版本做事,期間 plugin 已經更新兩次;那幾天新加的規則(SDD 完整性掃描、「review 不能自己審」、mutation 表)對它從頭到尾不存在。
+   - 改完 skill 想立刻用 → **開新 session**(最乾淨),或在原 session **重新叫一次那個 skill** 把當下的版本拉進來。
+   - 快取裡同時有好幾個版本是**正常的**:舊版會標 `.orphaned_at`,約 14 天後背景清掉,寬限期是給還在跑的舊 session 用的。要判斷「現在生效的是哪一份」,看哪個目錄**沒有** `.orphaned_at`。
+5. **去重本機**:若 `~/.claude/skills/<skill-name>` 還有同名實體目錄,改用 plugin 後會兩份打架——移除本機那份,只從 plugin 載。
+6. 用 `assets/skill-template.md` 當新 skill 的骨架起手。
 
 ## 腳本要跑過失敗路徑,不只跑過成功路徑
 
