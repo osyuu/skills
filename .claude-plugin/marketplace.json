@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.7.0"
+    "version": "1.9.0"
   },
   "plugins": [
     {
@@ -52,6 +52,15 @@
       "strict": false,
       "skills": [
         "./skills/sdd-harness-init"
+      ]
+    },
+    {
+      "name": "claim-check",
+      "description": "Install a Stop hook that checks the agent's own claims against the tool calls it actually made — whether something is really running, whether \"tests green\" predates the last edit, whether a conclusion drawn under challenge was preceded by actually opening the file in question.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/claim-check"
       ]
     },
     {
