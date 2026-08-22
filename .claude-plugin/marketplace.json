@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.9.0"
+    "version": "1.10.0"
   },
   "plugins": [
     {
@@ -61,6 +61,15 @@
       "strict": false,
       "skills": [
         "./skills/claim-check"
+      ]
+    },
+    {
+      "name": "handoff",
+      "description": "Before compacting or starting a fresh session, capture what the next session cannot look up — pending decisions, rejected paths and why, measured numbers, and what was claimed but never verified — and mechanically inventory the working tree and anything still running.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/handoff"
       ]
     },
     {
