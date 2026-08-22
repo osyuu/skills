@@ -88,6 +88,20 @@ else
   fi
 fi
 
+# spec-claim checker：與 decision-log 同一支 hook 的第二個區塊。
+for f in spec-claim-check.sh spec-claim.conf; do
+  case "$f" in *.sh) mode=755 ;; *) mode=644 ;; esac
+  if [ -f "$HOOK_DIR/$f" ]; then
+    ok "$HOOK_DIR/$f 已存在，跳過（不覆蓋既有門檻）。"
+  else
+    cp "$ASSETS/$f" "$HOOK_DIR/$f"
+    chmod "$mode" "$HOOK_DIR/$f"
+    ok "寫入 $HOOK_DIR/${f}。"      # 大括號不可省：`$f。` 會被當成變數名 f。，set -u 直接中止
+    git check-ignore -q "$HOOK_DIR/$f" 2>/dev/null && git add -f "$HOOK_DIR/$f" >/dev/null 2>&1 || true
+  fi
+done
+add_followup "填 $HOOK_DIR/spec-claim.conf 的 SPEC_SRC_DIRS 與 SPEC_TEST_DIRS——預設值多數 repo 對不上，填錯或沒填時符號檢查會靜默什麼都不做（跟「很乾淨」長得一樣）。"
+
 if [ "$WIRE_DEFAULT" = yes ]; then
   # setting core.hooksPath=hooks disables .git/hooks/* — warn if real ones live there
   SHADOWED=$(find .git/hooks -maxdepth 1 -type f ! -name '*.sample' 2>/dev/null | head -n1 || true)

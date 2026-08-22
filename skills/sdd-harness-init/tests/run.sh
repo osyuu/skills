@@ -54,6 +54,8 @@ out=$(sh "$SKILL/scripts/install.sh" 2>&1 | strip)
 ok "不覆蓋外來 pre-commit" "不覆蓋" "$out"
 ok "合併指示講得出插在哪" "最前面" "$out"
 no "指示裡沒有被吃掉的空洞" "以頂層  收尾" "$out"
+ok "spec-claim checker 一起裝進去" "spec-claim-check.sh" "$out"
+ok "提醒去填路徑，否則靜默空轉" "SPEC_SRC_DIRS" "$out"
 cd "$SANDBOX" || exit 1
 
 echo "── 指標節只該有一份 ──"

@@ -33,3 +33,12 @@ printf '\033[33m   → 回寫進對應權威文件後把 - [ ] 改 - [x]（或 -
 printf '\033[33m   （僅提醒、不阻擋 commit；push/merge 前務必 drain 完。）\033[0m\n'
 ) || true
 # <<< sdd-harness decision-log <<<
+
+# >>> sdd-harness spec-claim >>>
+# 另一半的 drift：decision-log 守「已記錄的翻案有沒有回寫」，這支守「回寫本身是不是真的」。
+# 同樣包在子 shell、warn-only。判準與門檻見 hooks/spec-claim-check.sh 檔頭。
+(
+[ -x hooks/spec-claim-check.sh ] || exit 0
+sh hooks/spec-claim-check.sh
+) || true
+# <<< sdd-harness spec-claim <<<
