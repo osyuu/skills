@@ -15,21 +15,27 @@ else
   echo "  ✓ 寫入 $DEST/hooks/claim-check.py"
 fi
 
-python3 - "$SETTINGS" <<'PY'
+python3 - "$SETTINGS" "$DEST" <<'PY'
 import json, os, sys
-p = sys.argv[1]
+p, dest = sys.argv[1], sys.argv[2]
 d = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
 hooks = d.setdefault("hooks", {})
 stop = hooks.setdefault("Stop", [])
-cmd = "python3 ~/.claude/hooks/claim-check.py"
+# **路徑要跟著 DEST 走。** 寫死 ~/.claude 的話，裝到別的家目錄時腳本放 A、註冊指 B，
+# hook 靜默不執行——那跟「沒裝」長得一模一樣。
+home = os.path.expanduser("~/.claude")
+script = os.path.join(dest, "hooks", "claim-check.py")
+cmd = "python3 " + ("~/.claude/hooks/claim-check.py" if os.path.realpath(dest) == os.path.realpath(home) else script)
 if any(cmd in json.dumps(g, ensure_ascii=False) for g in stop):
     print("  ✓ Stop hook 已註冊，跳過。")
 else:
     # **附加而不是取代**：Stop 可能已經掛了別人的 hook，覆蓋掉會靜默停用它。
     stop.append({"hooks": [{"type": "command", "command": cmd}]})
-    os.path.exists(p) and os.replace(p, p + ".bak")
+    backed = os.path.exists(p)
+    if backed:
+        os.replace(p, p + ".bak")
     json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"  ✓ 已註冊 Stop hook（原檔備份為 {os.path.basename(p)}.bak）")
+    print("  ✓ 已註冊 Stop hook" + (f"（原檔備份為 {os.path.basename(p)}.bak）" if backed else ""))
 PY
 
 cat <<'MSG'

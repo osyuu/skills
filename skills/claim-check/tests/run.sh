@@ -82,5 +82,38 @@ no "沒有宣稱就不該有輸出" "⚠" "$(run t9.jsonl)"
 : > t10.jsonl
 ok "空紀錄不崩" "0 個回合" "$(run t10.jsonl)"
 
+
+printf '\n安裝器\n'
+# **安裝器一定要真的跑過。** 這支自己就踩過兩個只有執行才看得到的 bug：空環境時
+# 印出不存在的備份檔、以及註冊的路徑寫死 ~/.claude 而腳本裝在別處（裝了卻不執行）。
+INST="$SKILL/scripts/install.sh"
+
+H1=$(mktemp -d)
+out=$(CLAIM_CHECK_HOME="$H1" sh "$INST" 2>&1)
+ok "空環境會寫入 checker" "claim-check.py" "$out"
+no "沒有原檔就別說有備份" "備份" "$out"
+cmd=$(python3 -c "
+import json;print(json.load(open('$H1/settings.json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
+ok "註冊的路徑指向真的裝進去的那支" "$H1" "$cmd"
+[ -f "${cmd#python3 }" ] && pass=$((pass+1)) && printf '  ok    註冊的路徑檔案存在\n' \
+  || { fail=$((fail+1)); printf '  FAIL  註冊的路徑檔案不存在：%s\n' "$cmd"; }
+
+out=$(CLAIM_CHECK_HOME="$H1" sh "$INST" 2>&1)
+ok "重跑不覆蓋 checker" "不覆蓋" "$out"
+ok "重跑不重複註冊" "已註冊" "$out"
+
+# 別人的 Stop hook 必須留著——覆蓋掉等於靜默停用它，而那看起來跟「對方沒裝」一樣。
+H2=$(mktemp -d)
+python3 -c "
+import json
+json.dump({'hooks':{'Stop':[{'hooks':[{'type':'command','command':'echo FOREIGN'}]}]}},
+          open('$H2/settings.json','w'))"
+CLAIM_CHECK_HOME="$H2" sh "$INST" >/dev/null 2>&1
+both=$(python3 -c "
+import json;print(json.dumps(json.load(open('$H2/settings.json'))['hooks']['Stop']))")
+ok "既有的 Stop hook 要留著" "FOREIGN" "$both"
+ok "自己的也要加進去" "claim-check" "$both"
+rm -rf "$H1" "$H2"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

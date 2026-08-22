@@ -80,6 +80,7 @@ sh <skill-dir>/scripts/install.sh
   ——那看起來跟「對方沒裝」一模一樣。同理，別把自己的區塊接在別人的 `exit` 後面。
 - **hook 是 warn-only（軟約束）**：要硬 gate（擋 merge）得靠 CI 去讀 DECISIONS.md + spec 進版控；pre-commit 本身刻意不擋（改末尾 `exit 0`→`exit 1` 可改成擋，但通常不建議）。
 - 跟 `design-doc` skill 的關係：本 skill 佈好 DECISIONS.md，design-doc 產出的設計書就有地方掛、翻案有地方記。裝完 harness 後要寫 spec，轉 design-doc。
+- 跟 `claim-check` skill **分工明確、不要合併**：本 skill 守的是**這個 repo 的產物**（spec 對不對得上 code），裝在 repo 裡、每個 repo 跑一次；`claim-check` 守的是**agent 的敘述**（說「跑過了」有沒有真的跑），裝在 `~/.claude`、每台機器跑一次。合併會讓「幫第五個專案裝 harness」順手改掉全域 settings——使用者不會預期，事後也難追。兩者的漏洞剛好互補：spec 沒說謊不代表報告沒說謊。
 - 跟 `claude-md-hygiene` skill **不衝突、互補**：本 skill 注入 CLAUDE.md 的那節剛好是 hygiene 要保留的三類（不變式機制＋指向 DECISIONS.md 的指標＋「hooksPath 不進版控」這個踩坑），真正易變的決策本身在 DECISIONS.md、不在 CLAUDE.md，所以 hygiene 會留下這節。唯一要注意：hygiene 若整份重寫 CLAUDE.md 可能洗掉隱形 marker——上面第 2 步的「標題 fallback + 就地重包」已處理，不會重複注入。
 
 ## 品質自檢
