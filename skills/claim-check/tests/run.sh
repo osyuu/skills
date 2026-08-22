@@ -91,7 +91,11 @@ INST="$SKILL/scripts/install.sh"
 H1=$(mktemp -d)
 out=$(CLAIM_CHECK_HOME="$H1" sh "$INST" 2>&1)
 ok "空環境會寫入 checker" "claim-check.py" "$out"
-no "沒有原檔就別說有備份" "備份" "$out"
+no "不該提到備份檔" "備份" "$out"
+[ -e "$H1/settings.json.bak" ] && { fail=$((fail+1)); printf '  FAIL  不該留下 .bak\n'; } \
+  || { pass=$((pass+1)); printf '  ok    不留下 .bak\n'; }
+[ -e "$H1/settings.json.tmp" ] && { fail=$((fail+1)); printf '  FAIL  暫存檔沒清掉\n'; } \
+  || { pass=$((pass+1)); printf '  ok    暫存檔沒殘留\n'; }
 cmd=$(python3 -c "
 import json;print(json.load(open('$H1/settings.json'))['hooks']['Stop'][0]['hooks'][0]['command'])")
 ok "註冊的路徑指向真的裝進去的那支" "$H1" "$cmd"

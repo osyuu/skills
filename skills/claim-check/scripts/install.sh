@@ -31,11 +31,14 @@ if any(cmd in json.dumps(g, ensure_ascii=False) for g in stop):
 else:
     # **附加而不是取代**：Stop 可能已經掛了別人的 hook，覆蓋掉會靜默停用它。
     stop.append({"hooks": [{"type": "command", "command": cmd}]})
-    backed = os.path.exists(p)
-    if backed:
-        os.replace(p, p + ".bak")
-    json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print("  ✓ 已註冊 Stop hook" + (f"（原檔備份為 {os.path.basename(p)}.bak）" if backed else ""))
+    # **原子寫入，不留 .bak。** 先寫暫存再 replace：中途死掉原檔一個 byte 都沒動，
+    # 成功也不會留下一個沒人講得出來歷的殘檔——那種檔案幾個月後只會誤導人
+    # （「還原備份」會把之後改的設定一起吞掉）。
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, p)
+    print("  ✓ 已註冊 Stop hook")
 PY
 then :
 else
