@@ -83,6 +83,19 @@ sh <skill-dir>/scripts/verify-guard.sh --expect-no-fire <新檔路徑> <關鍵�
 
 檔案必須是**你剛建的新檔**（未被 git 追蹤）。腳本驗完會刪掉它，所以拒絕既有檔案——對那些檔案等於刪掉未 commit 的修改，救不回來。
 
+**因此它只驗得了「新增檔案」型的守門。** 若守門檢查的是**既有檔案的修改**——例如「decision log 有未打勾項」「設計書的線路格式改了但測試向量沒跟上」——那個前提不成立，得手動驗：
+
+```sh
+cp <target> /tmp/bak            # 備份
+<製造違規>                       # 追加或修改
+git add <target>
+sh hooks/pre-commit 2>&1 | grep -F "<關鍵字>"
+git reset -q HEAD -- <target>   # index 與工作區都要還原
+cp /tmp/bak <target>
+```
+
+手動路徑沒有 trap 保護，中途失敗會留下髒 index。先確認 `git status` 乾淨再開始，做完再確認一次。
+
 **兩個方向都要驗**：
 
 - 該開火的地方開火了
