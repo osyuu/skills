@@ -1,0 +1,12 @@
+#!/bin/sh
+# >>> comment-budget >>>
+sh "$(dirname "$0")/comment-budget-check.sh" || true
+# <<< comment-budget <<<
+
+# >>> skill-tests >>>
+(sh "$(dirname "$0")/skill-tests.sh") || true
+# <<< skill-tests <<<
+
+# >>> marketplace-sync >>>
+(sh "$(dirname "$0")/marketplace-sync.sh") || true
+# <<< marketplace-sync <<<
