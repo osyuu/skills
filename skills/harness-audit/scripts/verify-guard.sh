@@ -7,8 +7,10 @@
 # 用法：
 #   sh verify-guard.sh [--expect-no-fire] <違規檔路徑> <期望出現的關鍵字>
 #
-# 檔案必須是**未被 git 追蹤的新檔**（呼叫端自己建）。腳本成功後會刪掉它，
-# 所以不接受既有檔案——那會刪掉使用者未 commit 的修改，且救不回來。
+# 檔案必須未被 git 追蹤，且**驗證成功後會被腳本刪掉**——請傳一個剛建的暫時檔名。
+# 傳既有的未追蹤檔案（例如還沒 add 的筆記）一樣會被刪，腳本分辨不出來。
+# 已追蹤的檔案直接拒絕：那等於刪掉未 commit 的修改，git reset 只還原 index，
+# 工作區那份救不回來。
 #
 # 關鍵字是**字面比對**（grep -F）。守門常用 [name] 當輸出前綴，走 regex 的話
 # 會被當字元類；反過來 core.UI 會誤中 core/UI 造成假陽性，那比假陰性更糟——
@@ -22,6 +24,11 @@ if [ "${1:-}" = "--expect-no-fire" ]; then EXPECT_FIRE=0; shift; fi
 
 FILE="${1:-}"
 EXPECT="${2:-}"
+if [ $# -gt 2 ]; then
+    echo "多餘的參數：$3" >&2
+    echo "  --expect-no-fire 必須放在最前面，放在後面會被當成第三個參數。" >&2
+    exit 2
+fi
 if [ -z "$FILE" ] || [ -z "$EXPECT" ]; then
     echo "用法：sh verify-guard.sh [--expect-no-fire] <違規檔路徑> <期望出現的關鍵字>" >&2
     exit 2
@@ -48,7 +55,7 @@ esac
     echo "  沒設 core.hooksPath 的話所有守門都是靜默失效的。" >&2
     exit 2; }
 
-git diff --cached --quiet || {
+git diff --cached --quiet >/dev/null 2>&1 || {
     echo "index 有 staged 變更。先 commit 或 stash 再驗證。" >&2; exit 2; }
 
 KEEP=0
@@ -58,8 +65,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-git add -- "$FILE" || exit 2
-if git diff --cached --quiet; then
+if ! git add -- "$FILE" 2>&1; then
+    git check-ignore -q -- "$FILE" && \
+        echo "  ${FILE} 被 .gitignore 排除，hook 永遠看不到它。" >&2
+    exit 2
+fi
+if git diff --cached --quiet >/dev/null 2>&1; then
     echo "警告：git add 之後 index 仍無變更，hook 不會看到任何東西。" >&2
     KEEP=1
     exit 2
@@ -76,6 +87,8 @@ if [ "$fired" = "$EXPECT_FIRE" ]; then
         printf '\033[32m✓ 開火了\033[0m — 注入 %s，輸出含「%s」\n' "$FILE" "$EXPECT"
     else
         printf '\033[32m✓ 正確放行\033[0m — 注入 %s，輸出不含「%s」\n' "$FILE" "$EXPECT"
+        printf '  注意：這個綠燈只在同一個關鍵字的**正向**驗證也通過時才有意義。\n'
+        printf '  守門整條失效、關鍵字打錯字，都會讓這裡變綠。\n'
     fi
     exit 0
 fi

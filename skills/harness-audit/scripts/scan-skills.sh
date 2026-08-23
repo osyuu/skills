@@ -9,6 +9,7 @@
 set -u
 
 CACHE="${CLAUDE_PLUGIN_CACHE:-$HOME/.claude/plugins/cache}"
+CACHE="${CACHE%/}"   # 結尾斜線會讓下面的 ${f#"$CACHE"/} 取錯 plugin 欄
 # 預設不截斷：負面觸發（「…時不要用」）通常寫在描述結尾，而那正是盤點最需要
 # 的判斷依據。設了 HARNESS_AUDIT_DESC_MAX 才截，且截斷是**按 byte**——
 # BWK awk（macOS 內建）的 substr 不理 locale，中文描述會被切出壞掉的 UTF-8。

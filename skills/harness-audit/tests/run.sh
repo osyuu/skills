@@ -14,7 +14,6 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 echo "scan-skills.sh"
-mk() { mkdir -p "$1"; shift; { for l in "$@"; do echo "$l"; done; } > "$(eval echo \$_D)/SKILL.md"; }
 w() { _p="$1"; shift; mkdir -p "$_p"; { for l in "$@"; do echo "$l"; done; } > "$_p/SKILL.md"; }
 
 C="$TMP/cache"
@@ -75,8 +74,19 @@ new GOOD_a.txt; check "expect-no-fire 正確放行 → 0" "$(rc --expect-no-fire
 new BAD_d.txt;  check "expect-no-fire 卻開火 → 1"   "$(rc --expect-no-fire BAD_d.txt '[guard]')" "1"
 (cd "$R" && rm -f BAD_d.txt)
 
+(cd "$R" && echo modified > seed.txt)
 check "拒絕已 tracked 的檔案 → 2" "$(rc seed.txt '[guard]')" "2"
-check "被拒的檔案沒被刪" "$([ -f "$R/seed.txt" ] && echo 在 || echo 沒了)" "在"
+check "被拒檔案的未 commit 修改還在" "$(cd "$R" && cat seed.txt)" "modified"
+(cd "$R" && git checkout -q -- seed.txt)
+
+new BAD_g.txt
+check "旗標放在參數後 → 2" "$(rc BAD_g.txt '[guard]' --expect-no-fire)" "2"
+check "被拒時檔案沒被刪" "$([ -f "$R/BAD_g.txt" ] && echo 在 || echo 沒了)" "在"
+(cd "$R" && rm -f BAD_g.txt)
+
+new BAD_h.txt
+out_clean=$(cd "$R" && sh "$DIR/scripts/verify-guard.sh" BAD_h.txt '[guard]' 2>/dev/null)
+check "stdout 沒有 diff header" "$(printf '%s' "$out_clean" | grep -c '^diff --git')" "0"
 
 (cd "$R" && git config core.hooksPath "$R/hooks")
 new BAD_e.txt; check "絕對路徑 hooksPath" "$(rc BAD_e.txt '[guard]')" "0"
