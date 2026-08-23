@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.10.0"
+    "version": "1.11.0"
   },
   "plugins": [
     {
@@ -106,6 +106,15 @@
       "strict": false,
       "skills": [
         "./skills/comment-budget"
+      ]
+    },
+    {
+      "name": "harness-audit",
+      "description": "Audit which guard-rail harnesses a repo should have, which are installed, and which are missing — then prove each one actually fires by injecting a violation.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/harness-audit"
       ]
     }
   ]
