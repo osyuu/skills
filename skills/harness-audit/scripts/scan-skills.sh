@@ -1,27 +1,27 @@
 #!/bin/sh
-# 列出這台機器上「現在生效」的 skill：名稱 + description。
+# 列出這台機器上「現在生效」的 skill：限定名 plugin:skill + description。
 #
-# 掃 plugin cache 而非任何本機 repo——skill 要在別台機器上也能用，而那些機器
-# 不會有你的 skill 原始碼。
+# 掃 plugin cache 而非本機 repo——換一台機器就沒有 skill 原始碼，cache 一定在。
+# 注意本機 ~/.claude/skills/ 不在掃描範圍，那裡的同名 skill 會與 plugin 版打架。
 #
-# 兩個只有實跑才看得到的坑：
-#   - 同一個 skill 在 cache 裡有多個版本目錄，舊的帶 .orphaned_at（約 14 天後
-#     才清，寬限期留給還在跑的舊 session）。不濾會重複、而且描述可能是舊版。
-#     版本目錄的深度不固定（有的 plugin 是 <ver>/skills/，有的是
-#     <ver>/.claude/skills/），所以要往上找幾層而不是寫死一層。
-#   - description 常用 YAML 折疊語法（`>-` 後面接縮排行）。只讀冒號後面那段
-#     會拿到字面的 ">-"，看起來像「這個 skill 沒寫描述」。
+# 取不到 description 的仍然印出並標 (無描述)：這支的用途是「盤點漏了哪些」，
+# 靜默消失跟「那個 skill 根本沒裝」無法分辨，是最致命的失敗模式。
 set -u
 
 CACHE="${CLAUDE_PLUGIN_CACHE:-$HOME/.claude/plugins/cache}"
-MAXLEN="${HARNESS_AUDIT_DESC_MAX:-320}"
-[ -d "$CACHE" ] || { echo "找不到 plugin cache：$CACHE" >&2; exit 1; }
+# 預設不截斷：負面觸發（「…時不要用」）通常寫在描述結尾，而那正是盤點最需要
+# 的判斷依據。設了 HARNESS_AUDIT_DESC_MAX 才截，且截斷是**按 byte**——
+# BWK awk（macOS 內建）的 substr 不理 locale，中文描述會被切出壞掉的 UTF-8。
+MAXLEN="${HARNESS_AUDIT_DESC_MAX:-0}"
+[ -d "$CACHE" ] || { echo "找不到 plugin cache：${CACHE}" >&2; exit 1; }
 
-find "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
+find -L "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
     skill_dir=$(dirname "$f")
     skills_dir=$(dirname "$skill_dir")
     [ "$(basename "$skills_dir")" = "skills" ] || continue
 
+    # 舊版本目錄帶 .orphaned_at（約 14 天後才清，寬限期留給還在跑的 session）。
+    # 深度不固定：有的是 <ver>/skills/，有的是 <ver>/.claude/skills/。
     d="$skills_dir"; orphaned=0; i=0
     while [ $i -lt 4 ]; do
         d=$(dirname "$d")
@@ -31,28 +31,32 @@ find "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
     done
     [ "$orphaned" = "1" ] && continue
 
+    rel=${f#"$CACHE"/}
+    plug=$(printf '%s' "$rel" | cut -d/ -f2)
     name=$(basename "$skill_dir")
+
     desc=$(awk -v maxlen="$MAXLEN" '
+        { sub(/\r$/, "") }                      # CRLF 會讓第一行不等於 --- 而整份放棄
         NR==1 && $0 != "---" { exit }
         NR>1 && /^---[[:space:]]*$/ { exit }
         /^description:/ {
-            v = $0
-            sub(/^description:[[:space:]]*/, "", v)
-            if (v ~ /^[>|][-+]?[[:space:]]*$/) { folded = 1; next }
+            v = $0; sub(/^description:[[:space:]]*/, "", v)
+            if (v ~ /^[>|][-+]?[[:space:]]*$/) { collecting = 1; next }
             gsub(/^"|"$/, "", v); gsub(/^'"'"'|'"'"'$/, "", v)
-            buf = v; exit
+            buf = v; collecting = 1; next       # plain scalar 也可能有縮排續行
         }
-        folded && /^[[:space:]]/ {
+        collecting && /^[[:space:]]/ {
             v = $0; sub(/^[[:space:]]+/, "", v)
             buf = buf (buf == "" ? "" : " ") v; next
         }
-        folded { exit }
+        collecting { exit }
         END {
             gsub(/[[:space:]]+/, " ", buf)
-            if (length(buf) > maxlen) buf = substr(buf, 1, maxlen) "…"
+            if (maxlen > 0 && length(buf) > maxlen) buf = substr(buf, 1, maxlen) "…"
             print buf
         }
     ' "$f")
 
-    [ -n "$desc" ] && printf '%s\t%s\n' "$name" "$desc"
-done | LC_ALL=C sort -u -k1,1
+    [ -n "$desc" ] || desc="(無描述)"
+    printf '%s:%s\t%s\n' "$plug" "$name" "$desc"
+done | LC_ALL=C sort -u -t"$(printf '\t')" -k1,1

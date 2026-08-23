@@ -5,8 +5,10 @@ description: >-
   動態掃 plugin cache 取得可用 skill 清單，不維護靜態清單——日後新增任何 harness skill 都會自動出現在盤點裡，
   不必回頭改這個 skill。當使用者說「開新專案 / 新 repo 要裝什麼 / bootstrap / 該裝哪些守門 / 有沒有漏裝 /
   盤點 harness / 把守門補齊 / 這個 repo 的檢查夠不夠 / 幫我建開發用的 harness / 我怕忘記要裝哪些 /
-  set up guards / project bootstrap / which harness skills / audit my hooks」，或你正要為一個 repo 安裝
-  pre-commit 檢查、剛裝完守門想確認它不是靜默失效、或發現 repo 有 hooks/ 卻不確定涵蓋了什麼時，主動使用。
+  set up guards / project bootstrap / which harness skills / audit my hooks / pre-commit hooks /
+  guard rails / verify the hooks actually fire / is my lint even running / what checks does this repo have」，
+  或你正要為一個 repo 安裝 pre-commit 檢查、剛裝完守門想確認它不是靜默失效、
+  或發現 repo 有 hooks/ 卻不確定涵蓋了什麼時，主動使用。
   純寫應用 code 不要用；已經明確知道只要裝某一個 skill 時直接叫那個 skill，不必繞這裡。
 ---
 
@@ -29,15 +31,23 @@ description: >-
 sh <skill-dir>/scripts/scan-skills.sh
 ```
 
-輸出這台機器上現在生效的所有 skill（名稱 + description），已濾掉 `.orphaned_at` 的舊版本。
+輸出這台機器上現在生效的所有 skill（`plugin:skill` 限定名 + description），已濾掉 `.orphaned_at` 的舊版本。取不到描述的仍會列出並標 `(無描述)`——靜默消失跟「那個 skill 根本沒裝」無法分辨，對盤點是最致命的失敗模式。
+
+兩個環境變數：`CLAUDE_PLUGIN_CACHE` 換掃描路徑（測試用），`HARNESS_AUDIT_DESC_MAX` 截斷描述長度（預設不截；截斷按 byte，中文會被切壞）。
 
 **掃 plugin cache，不掃任何本機 repo**——換一台機器就沒有你的 skill 原始碼，但 cache 一定在。
 
 從 description 判斷哪些是守門類（會裝 pre-commit / 檢查 / 靜態分析的），對照 repo 現況：
 
 ```sh
-grep -oE '^# >>> [a-z-]+' hooks/pre-commit    # 已裝的 marker
+grep -oE '^# >>> .* >>>' hooks/pre-commit     # 已裝的 marker
 ```
+
+marker 名稱含空格（例如 `# >>> sdd-harness decision-log >>>`），字元類別漏掉空格會把它截半。
+
+**盤點看不到 `~/.claude/skills/`**——那裡的本機 skill 與 plugin 版同名時會互相打架，而掃描刻意不含它（那個目錄換機器就沒有）。有本機 skill 的話要另外 `ls ~/.claude/skills/` 對照。
+
+**「哪些算守門類」由你從 description 判斷，沒有欄位或關鍵字約定。** 這是刻意的——加了約定就等於維護一份靜態清單，而新 skill 不會遵守它。代價是同一個 repo 兩次盤點可能得到略微不同的結論；判斷不了就去讀那個 skill 的 SKILL.md，不要猜。
 
 ### 2. 判斷適用性 — 不是全裝
 
@@ -60,20 +70,25 @@ grep -oE '^# >>> [a-z-]+' hooks/pre-commit    # 已裝的 marker
 - 對半數改動開火 = 噪音，會被無視，等於沒裝
 - 完全不開火 = 也等於沒裝
 
-目標是只有離群值會亮。
+目標是只有離群值會亮。**這步沒有通用腳本**——每個檢查的門檻定義不同，要對著該檢查的規則寫一次性統計（對每個 commit 的每個相關檔案，算它的新增行會不會觸發門檻）。寫起來大約十行，但不寫就只能猜。
 
 ### 5. 注入故障驗證每一道 — 這步不可跳過
 
 ```sh
-sh <skill-dir>/scripts/verify-guard.sh <違規檔路徑> <期望出現的關鍵字>
+sh <skill-dir>/scripts/verify-guard.sh              <新檔路徑> <期望出現的關鍵字>
+sh <skill-dir>/scripts/verify-guard.sh --expect-no-fire <新檔路徑> <關鍵字>
 ```
 
-腳本負責危險的機械部分：確認 index 乾淨、`git add`、跑 hook、比對輸出、自動還原。**違規長什麼樣由你針對該 repo 的規則決定**——從 regex 反推匹配字串太脆弱，那是判斷不是機械。
+腳本負責危險的機械部分：確認 index 乾淨、`git add`、跑 hook、字面比對輸出、自動還原。**違規長什麼樣由你針對該 repo 的規則決定**——從 regex 反推匹配字串太脆弱，那是判斷不是機械。
+
+檔案必須是**你剛建的新檔**（未被 git 追蹤）。腳本驗完會刪掉它，所以拒絕既有檔案——對那些檔案等於刪掉未 commit 的修改，救不回來。
 
 **兩個方向都要驗**：
 
 - 該開火的地方開火了
-- **不該開火的地方沒開火** — allow 清單、ignore 路徑要各驗一次，否則你不知道它是「正確放行」還是「整條規則都沒作用」
+- **不該開火的地方沒開火**（`--expect-no-fire`）— allow 清單、ignore 路徑要各驗一次，否則你不知道它是「正確放行」還是「整條規則都沒作用」
+
+關鍵字是**字面比對**，不是 regex。守門常用 `[name]` 當輸出前綴，走 regex 會被當字元類；反過來 `core.UI` 會誤中 `core/UI` 造成**假陽性**——那比假陰性更糟，它讓人簽收一道從沒驗過的守門。
 
 實測踩過的假陰性：`git grep` 只掃 **tracked** 檔案。測試檔沒 `git add` 就跑 audit，得到 0 條違規，看起來乾淨。verify-guard.sh 會自己 add，但手動跑 audit 時要記得。
 
