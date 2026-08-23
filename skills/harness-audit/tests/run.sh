@@ -29,6 +29,22 @@ mkdir -p "$C/mkt/plugA/v1/skills/crlf"
 printf -- '---\r\nname: crlf\r\ndescription: CRLF 描述\r\n---\r\n' > "$C/mkt/plugA/v1/skills/crlf/SKILL.md"
 w "$C/mkt/plugA/v1/skills/ascii" "---" "name: ascii" "description: abcdefgh" "---"
 
+# plugC 宣告一個 skill，但目錄裡躺著三個（source: "./" 的實況）
+w "$C/mkt/plugC/v1/skills/real"    "---" "name: real"    "description: 真的" "---"
+w "$C/mkt/plugC/v1/skills/ghostA"  "---" "name: ghostA"  "description: 幻影A" "---"
+w "$C/mkt/plugC/v1/skills/ghostB"  "---" "name: ghostB"  "description: 幻影B" "---"
+mkdir -p "$C/mkt/plugC/v1/.claude-plugin"
+cat > "$C/mkt/plugC/v1/.claude-plugin/marketplace.json" <<'MJ'
+{"plugins":[{"name":"plugC","skills":["./skills/real"]},{"name":"other","skills":["./skills/ghostA"]}]}
+MJ
+# plugD 宣告多個 skill（ui-ux-pro-max 的形狀）——用目錄名猜會在這裡翻車
+w "$C/mkt/plugD/v1/skills/one" "---" "name: one" "description: 其一" "---"
+w "$C/mkt/plugD/v1/skills/two" "---" "name: two" "description: 其二" "---"
+mkdir -p "$C/mkt/plugD/v1/.claude-plugin"
+cat > "$C/mkt/plugD/v1/.claude-plugin/marketplace.json" <<'MJ'
+{"plugins":[{"name":"plugD","skills":["./skills/one","./skills/two"]}]}
+MJ
+
 out=$(CLAUDE_PLUGIN_CACHE="$C" sh "$DIR/scripts/scan-skills.sh" 2>/dev/null)
 g() { printf '%s\n' "$out" | awk -F'\t' -v k="$1" '$1==k{print $2}'; }
 
@@ -46,6 +62,14 @@ check "預設不截斷" "$(g plugA:ascii)" "abcdefgh"
 out2=$(CLAUDE_PLUGIN_CACHE="$C" HARNESS_AUDIT_DESC_MAX=4 sh "$DIR/scripts/scan-skills.sh" 2>/dev/null)
 check "MAXLEN 生效" "$(printf '%s\n' "$out2" | awk -F'\t' '$1=="plugA:ascii"{print $2}')" "abcd…"
 
+check "宣告清單過濾掉幻影"   "$(printf '%s\n' "$out" | grep -c '^plugC:ghost')" "0"
+check "宣告的 skill 保留"     "$(g plugC:real)" "真的"
+check "一個 plugin 多個 skill" "$(printf '%s\n' "$out" | grep -c '^plugD:')" "2"
+check "無 marketplace.json 的照收" "$(printf '%s\n' "$out" | grep -c '^plugA:')" "6"
+
+out3=$(CLAUDE_PLUGIN_CACHE="$C//" sh "$DIR/scripts/scan-skills.sh" 2>/dev/null)
+check "多層結尾斜線" "$(printf '%s\n' "$out3" | awk -F'\t' '$1=="plugA:alpha"{print $2}')" "單行描述"
+
 rc=$(CLAUDE_PLUGIN_CACHE="$TMP/none" sh "$DIR/scripts/scan-skills.sh" >/dev/null 2>&1; echo $?)
 check "cache 不存在 → 1" "$rc" "1"
 
@@ -55,7 +79,7 @@ R="$TMP/repo"; mkdir -p "$R/hooks"
 # 輸出刻意含 regex 特殊字元：守門用 [name] 當前綴是常態
 printf '#!/bin/sh\ngit diff --cached --name-only | grep -q BAD && echo "[guard] 違規 core/UI.swift"\nexit 0\n' > "$R/hooks/pre-commit"
 chmod +x "$R/hooks/pre-commit"
-(cd "$R" && echo seed > seed.txt && git add . && git commit -qm init)
+(cd "$R" && echo seed > seed.txt && echo tracked > BAD_tracked.txt && git add . && git commit -qm init)
 rc() { (cd "$R" && sh "$DIR/scripts/verify-guard.sh" "$@" >/dev/null 2>&1; echo $?); }
 new() { (cd "$R" && echo x > "$1"); }
 
@@ -74,10 +98,10 @@ new GOOD_a.txt; check "expect-no-fire 正確放行 → 0" "$(rc --expect-no-fire
 new BAD_d.txt;  check "expect-no-fire 卻開火 → 1"   "$(rc --expect-no-fire BAD_d.txt '[guard]')" "1"
 (cd "$R" && rm -f BAD_d.txt)
 
-(cd "$R" && echo modified > seed.txt)
-check "拒絕已 tracked 的檔案 → 2" "$(rc seed.txt '[guard]')" "2"
-check "被拒檔案的未 commit 修改還在" "$(cd "$R" && cat seed.txt)" "modified"
-(cd "$R" && git checkout -q -- seed.txt)
+(cd "$R" && echo modified > BAD_tracked.txt)
+check "拒絕已 tracked 的檔案 → 2" "$(rc BAD_tracked.txt '[guard]')" "2"
+check "被拒檔案的未 commit 修改還在" "$(cd "$R" && cat BAD_tracked.txt)" "modified"
+(cd "$R" && git checkout -q -- BAD_tracked.txt)
 
 new BAD_g.txt
 check "旗標放在參數後 → 2" "$(rc BAD_g.txt '[guard]' --expect-no-fire)" "2"

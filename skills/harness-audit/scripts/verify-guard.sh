@@ -65,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if ! git add -- "$FILE" 2>&1; then
+if ! git add -- "$FILE"; then
     git check-ignore -q -- "$FILE" && \
         echo "  ${FILE} 被 .gitignore 排除，hook 永遠看不到它。" >&2
     exit 2

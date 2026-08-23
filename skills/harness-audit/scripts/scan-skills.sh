@@ -9,12 +9,43 @@
 set -u
 
 CACHE="${CLAUDE_PLUGIN_CACHE:-$HOME/.claude/plugins/cache}"
-CACHE="${CACHE%/}"   # 結尾斜線會讓下面的 ${f#"$CACHE"/} 取錯 plugin 欄
+while [ "${CACHE%/}" != "$CACHE" ]; do CACHE="${CACHE%/}"; done   # 多個結尾斜線會讓 plugin 欄取錯
 # 預設不截斷：負面觸發（「…時不要用」）通常寫在描述結尾，而那正是盤點最需要
 # 的判斷依據。設了 HARNESS_AUDIT_DESC_MAX 才截，且截斷是**按 byte**——
 # BWK awk（macOS 內建）的 substr 不理 locale，中文描述會被切出壞掉的 UTF-8。
 MAXLEN="${HARNESS_AUDIT_DESC_MAX:-0}"
 [ -d "$CACHE" ] || { echo "找不到 plugin cache：${CACHE}" >&2; exit 1; }
+
+# 每個 plugin 目錄底下躺著整個來源 repo 的 skill（marketplace 的 source: "./"
+# 造成），但 marketplace.json 只宣告其中一部分。不過濾就會產出大量根本叫不出來
+# 的限定名——而產生正確的限定名正是這一欄存在的理由。實測未過濾時 57 → 167 行，
+# 其中約 110 筆是幻影。
+ALLOW=""
+QUALIFY=1
+if command -v python3 >/dev/null 2>&1; then
+    ALLOW=$(python3 - "$CACHE" <<'PYFILTER' 2>/dev/null || true
+import glob, json, os, sys
+cache = sys.argv[1]
+for mf in glob.glob(os.path.join(cache, "*", "*", "*", ".claude-plugin", "marketplace.json")):
+    ver = os.path.dirname(os.path.dirname(mf))
+    plug = os.path.basename(os.path.dirname(ver))
+    try:
+        data = json.load(open(mf))
+    except Exception:
+        continue
+    for entry in data.get("plugins", []):
+        if entry.get("name") != plug:
+            continue
+        for sk in entry.get("skills", []):
+            print(plug + "/" + os.path.basename(sk.rstrip("/")))
+PYFILTER
+)
+else
+    # 沒有 python3 就無法讀宣告清單。印幻影限定名比不印限定名更糟——
+    # 前者看起來可以直接拿去叫用，後者至少是誠實的。
+    QUALIFY=0
+    echo "警告：找不到 python3，無法讀 marketplace 宣告，改為只輸出 skill 名（無 plugin 前綴）" >&2
+fi
 
 find -L "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
     skill_dir=$(dirname "$f")
@@ -58,6 +89,15 @@ find -L "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
         }
     ' "$f")
 
+    # 只對「有宣告清單」的 plugin 過濾；沒有 marketplace.json 的（bundled 等）照收
+    if [ "$QUALIFY" = "1" ] && printf '%s\n' "$ALLOW" | grep -q "^${plug}/"; then
+        printf '%s\n' "$ALLOW" | grep -qx "${plug}/${name}" || continue
+    fi
+
     [ -n "$desc" ] || desc="(無描述)"
-    printf '%s:%s\t%s\n' "$plug" "$name" "$desc"
+    if [ "$QUALIFY" = "1" ]; then
+        printf '%s:%s\t%s\n' "$plug" "$name" "$desc"
+    else
+        printf '%s\t%s\n' "$name" "$desc"
+    fi
 done | LC_ALL=C sort -u -t"$(printf '\t')" -k1,1
