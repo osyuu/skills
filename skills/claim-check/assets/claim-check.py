@@ -57,9 +57,18 @@ def _touched(calls):
 # 這條順帶蓋住一個踩過的坑：還原注入的故障後沒重建就跑 test-without-building，
 # 拿到的是舊 binary 的結果（記在 feedback_hollow_tests）。
 
-RE_TEST = re.compile(r"test-without-building|tests/run\.sh|xcodebuild.*\btest\b|pytest|npm test")
+RE_TEST = re.compile(
+    r"test-without-building|tests/run\.sh|xcodebuild.*\btest\b|pytest|npm test"
+    r"|swift test|cargo test|go test|dotnet test")
 RE_BUILD = re.compile(r"xcodebuild|swift build")
 RE_GIT = re.compile(r"git (commit|merge)")
+# 改動不是只有 Edit/Write。有些 session 明確要求優先用 Bash 改檔（sed -i、heredoc、
+# python3 寫檔），那時只認工具名等於整條「跑完之後有沒有再動過 code」失效——實測一個
+# 全程用 Bash 的 session，7 次「注入故障」開火全是這樣來的誤判。
+# 要求副檔名，所以 `> /dev/null` 這類不會誤中。
+RE_BASH_MUTATE = re.compile(
+    r"sed -i|>>?\s*[\w./~-]+\.(swift|py|sh|md|json|ya?ml|conf|txt|plist|toml)"
+    r"|write_text|cat\s*>|tee\s")
 # 背景宣稱的時效：多少個事件內啟動過才算數。實測「audit 還在跑」那次，最近一次
 # 背景啟動在 51 個事件前（10 個回合，早已收工）；正常的「還在跑」都緊接在 spawn 後幾個事件內。
 BG_WINDOW = 25
@@ -70,7 +79,7 @@ def _index(calls):
     ix = {"test": -1, "build": -1, "edit": -1, "git": -1, "bg": -1, "read": -1}
     for n, c in enumerate(calls):
         cmd = _cmd(c)
-        if c["name"] in ("Edit", "Write", "NotebookEdit"):
+        if c["name"] in ("Edit", "Write", "NotebookEdit") or (_is_bash(c) and RE_BASH_MUTATE.search(cmd)):
             ix["edit"] = n
         if c["name"] in ("Read", "Grep", "Glob") or (_is_bash(c) and re.search(r"grep|sed -n|cat |head |tail ", cmd)):
             ix["read"] = n
@@ -80,21 +89,27 @@ def _index(calls):
             ix["build"] = n
         if RE_GIT.search(cmd):
             ix["git"] = n
-        if c["input"].get("run_in_background") or c["name"] in ("Agent", "Workflow"):
+        # 還在跟 agent 通訊 = 它還活著。長對話裡 spawn 之後隔幾十個事件仍在等它是常態。
+        if c["input"].get("run_in_background") or c["name"] in ("Agent", "Workflow", "SendMessage"):
             ix["bg"] = n
     return ix
 
 
 def _fresh(ix, kind):
-    """跑過，而且跑完之後沒有再動過 code。"""
-    return ix[kind] >= 0 and ix[kind] > ix["edit"]
+    """跑過，而且跑完之後沒有再動過 code。
+
+    用 >= 而非 >：`改一行 && 跑測試` 寫在同一個 Bash 呼叫裡是常見寫法（mutation
+    測試尤其如此——改、跑、還原全在一行），在事件索引上兩者是同一個位置，用 > 會
+    把它判成「改完沒跑」。真陽性不受影響：跑完之後才改的，edit 的位置仍然在後面。
+    """
+    return ix[kind] >= 0 and ix[kind] >= ix["edit"]
 
 
 RULES = [
     # 背景工作會跨回合活著，所以不能只看本回合；但也不能看整個 session——
     # 十個回合前啟動、早就收工的 agent，不能拿來當「現在正在跑」的證據。
     ("背景執行",
-     r"(正在跑|還在跑|已經在跑|在背景|背景跑)",
+     r"(正在跑|還在跑|已經在跑|跑著|還在背景|背景執行中)",
      lambda ix: ix["bg"] >= 0 and ix["bg"] >= ix["_now"] - BG_WINDOW,
      "說了有東西在跑，但最近沒有啟動過背景工作或 agent"),
 
