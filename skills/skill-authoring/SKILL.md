@@ -1,20 +1,16 @@
 ---
 name: skill-authoring
 description: >-
-  撰寫、改進、審查 Claude Code skill 的房規與範本——涵蓋 SKILL.md 結構、description
-  觸發設計、漸進式揭露、右尺寸、去冗餘,以及本 marketplace 的登錄流程(加進
+  撰寫、改進、審查 Claude Code skill 的房規與範本,以及本 marketplace 的登錄流程(加進
   marketplace.json、bump version、去重本機同名 skill)。當使用者說「寫一個 skill / 新增
   skill / 改進這個 skill / 這個 skill 怎麼沒觸發 / 幫 skill 潤一下 / review 這個 SKILL.md
   / 把這個流程變成 skill」,或在這個 skills repo 裡新增/編輯任何 SKILL.md
-  時,主動使用。需要跑嚴謹的 eval/benchmark 迭代時改用 bundled 的 skill-creator;本 skill
-  專注在「寫得好 + 正確登錄」。
+  時,主動使用。需要跑嚴謹的 eval/benchmark 迭代時改用 bundled 的 skill-creator。
 ---
 
 # Skill Authoring — 房規與範本
 
 寫一份好 skill 的核心認知:**SKILL.md 不是說明文件,是給模型的「觸發器 + 決策框架」**。使用者不會讀它,模型才會。所以每一行都要問:「這句話會不會讓模型在對的時機啟動、並在啟動後做對事?」不會 → 刪。
-
-需要嚴謹跑 eval/跑分迭代時,用 bundled 的 `skill-creator`(它有整套 benchmark/viewer harness);本 skill 是**撰寫慣例 + 本 repo 的登錄機制**,兩者互補不重複。
 
 ## 何時用 / 何時不用
 
@@ -22,23 +18,22 @@ description: >-
 
 **不用**:純寫應用程式 code(那是一般開發)、跑 skill 的 eval 跑分(用 skill-creator)、寫給人看的 README/文件。
 
-## 三層漸進式揭露(先懂這個,決定內容擺哪)
+## 寫作判準:先叫用 writing-for-agents
 
-模型分三層載入,把東西放對層是省 context 的關鍵:
+**寫新 skill 或大改既有 skill 前,先叫用 `mattpocock-skills:writing-for-agents` 拿完整判準**——資訊階層與漸進式揭露、context pointer 的寫法、完成判準的清晰度與要求度、leading word、negation、no-op 與去冗餘,那份是這些判準的單一真相,本檔不複製一份。**沒裝就跳過**(它走 mattpocock marketplace、不隨 osyuu 同步,新機可能沒有),下面的壓縮版足以完成登錄與基本品質。
 
-1. **metadata(name + description)**:**永遠在 context**。這是觸發的唯一依據,約 100 字。
-2. **SKILL.md body**:skill 觸發時才載入,**理想 <500 行**。放「每次都要的核心流程/原則」。
-3. **bundled resources**(`references/`、`assets/`、`scripts/`):**按需載入**,不佔平時 context。大塊資料、模板、可執行腳本放這。
+壓縮版——沒裝時至少守住這三條:
 
-判準:一份參考資料若不是每次都要 → 移進 `references/`,body 只留一句「何時去讀它」的指標。body 逼近 500 行 → 拆層,別硬塞。
+- **三層載入,把東西放對層**:metadata(name + description)**永遠在 context**、約 100 字;SKILL.md body 觸發時才載入、**理想 <500 行**;`references/`、`assets/`、`scripts/` 按需載入。不是每次都要的往下層放,body 只留一句「何時去讀它」。body 逼近 500 行 → 拆層,別硬塞。
+- **解釋 why,而非堆 ALL-CAPS MUST**。今天的模型有 theory of mind,講清楚「為什麼重要」比命令句更有效、也更耐用。發現自己在寫 `ALWAYS`/`NEVER` 全大寫或超死板結構 → 黃燈,改成講理由。
+- **去冗餘**。同一件事在多節重複要有理由(如 checklist 跨審查視角刻意各列一次);否則刪。逐字重複兩處 → 併一處。
 
 ## description 是第一槓桿(最該用力的地方)
 
-description 決定「會不會被觸發」,勝過 body 裡任何內容。三個要點:
+description 決定「會不會被觸發」,勝過 body 裡任何內容。**怎麼寫**見 writing-for-agents 的 context pointer 一節;這裡只記它沒有的兩條本地慣例:
 
-1. **同時寫「做什麼」+「何時用」**。所有 when-to-use 資訊放這裡,不要只放 body——body 只在觸發後才被讀到,對觸發沒幫助。
-2. **略帶 pushy,撒觸發網**。模型傾向 under-trigger(該用不用)。列出使用者可能講的**動作詞 / 情境 / 產物**當關鍵字面。雙語工作就中英都鋪。
-3. **必要時寫負面觸發**(「…時不要用」),壓低 over-trigger 與跟鄰近 skill 的混淆。
+1. **略帶 pushy,撒觸發網**。模型傾向 under-trigger(該用不用)。列出使用者可能講的**動作詞 / 情境 / 產物**當關鍵字面。雙語工作就中英都鋪。
+2. **必要時寫負面觸發**(「…時不要用」),壓低 over-trigger 與跟鄰近 skill 的混淆——這個 marketplace 的 skill 彼此邊界相鄰,少了它就會互搶。
 
 **反例**:`把資料視覺化成圖表`
 **正例**:`把資料視覺化成圖表。當使用者提到 dashboard、報表、data viz、圖表、要呈現任何數據時主動使用,即使沒明講「圖表」二字。純資料清理(無視覺產出)不要用。`
@@ -63,13 +58,6 @@ description 決定「會不會被觸發」,勝過 body 裡任何內容。三個�
 2. 提高 `skillListingBudgetFraction`(settings.json)—— **每回合都吃 context**,慎用。
 3. 描述寫精短一點(治標,只是讓自己少佔預算)。
 
-## body 撰寫風格
-
-- **祈使句**寫指令(「先讀需求」而非「你應該要讀需求」)。
-- **解釋 why,而非堆 ALL-CAPS MUST**。今天的模型有 theory of mind,講清楚「為什麼重要」比命令句更有效、也更耐用。發現自己在寫 `ALWAYS`/`NEVER` 全大寫或超死板結構 → 黃燈,改成講理由。
-- **通用勝過窄例**。針對特定範例寫死的規則,換個輸入就失效;抽出原則。
-- **去冗餘**。同一件事在多節重複要有理由(如 checklist 跨審查視角刻意各列一次);否則刪。逐字重複兩處 → 併一處。
-
 ## 進階手法(值錢但別硬塞,右尺寸為先)
 
 看情況採用,不是每個 skill 都要:
@@ -77,7 +65,7 @@ description 決定「會不會被觸發」,勝過 body 裡任何內容。三個�
 - **Must / Recommended / Skip 分診**:body 開頭給觸發三分法 + 一句決策準則。對「容易誤觸發」的 skill 特別有效(範式:ui-ux-pro-max)。
 - **優先級 / severity 表**:清單型 skill 若條目很多,標 CRITICAL/HIGH/MEDIUM 給分診順序,勝過平鋪——讓模型先攻高衝擊項再挑細節。
 - **穩定 rule ID**(kebab-case handle):條目要被引用/查詢時才需要;個人小 skill 通常 overkill。
-- **重內容外移 + 腳本化**:大塊資料進 `references/`;重複的確定性步驟寫成 `scripts/` 讓模型直接執行,不必每次重寫。
+- **腳本化**:重複的確定性步驟寫成 `scripts/` 讓模型直接執行,不必每次重寫。
 - **逐條 citation**:規則需要權威背書時附來源;有底部 Sources 區通常就夠。
 
 ## 登錄到本 marketplace(寫完別漏這步,漏了等於沒發佈)
@@ -115,8 +103,7 @@ skill 附的腳本最容易「寫完看起來對就出貨」。兩個只有**執
 要外審的,派一個**沒參與撰寫**的 agent 拿下面那份品質自檢逐條打。判準不必重寫一份
 ——自審的問題從來不是不知道判準,是知道自己為什麼那樣寫,於是看不見那個假設是錯的。
 
-**bundled script 要另一個視角,而且要求它實跑。** 腳本的失敗模式多半是靜默的:壞掉的
-pattern、少一個欄位、多一層跳脫,全都回「沒有發現」——而那跟「真的沒問題」長得一模一樣,
+**bundled script 要另一個視角,而且要求它實跑**——上一節那個「印了成功訊息但什麼都沒做」
 純讀 code 分不出來。所以這類 skill 該附 `tests/`:手打過一次的案例寫成 fixture,之後每台
 機器、每次改動都跑得到,不必每次找人重新想一遍。**skill 一 push 就傳到所有機器,沒有灰度。**
 
@@ -128,8 +115,8 @@ pattern、少一個欄位、多一層跳脫,全都回「沒有發現」——而
 - description 有沒有同時講「做什麼 + 何時用」?夠不夠 pushy?要不要加負面觸發?
 - 清單裡這個 skill 有帶出描述嗎?**空白先查 `skillUsage` 分數與清單預算,別直接怪 YAML**(見上節)。
 - body 是否 <500 行?每次都要的才留 body,其餘進 references/assets?
-- 有沒有解釋 why,還是在堆 ALL-CAPS MUST?
-- 有沒有逐字重複?跨節重複是刻意(有用)還是冗餘(該刪)?
+- 有沒有解釋 why,還是在堆 ALL-CAPS MUST?有沒有逐字重複?
+- 大改的話,writing-for-agents 的判準逐條過了嗎(沒裝則跳過)?
 - 這個 skill 值得這麼多內容嗎,還是為填版而灌水?
 - 進階手法(分診/severity/ID/腳本)是這個 skill 真的需要,還是 over-engineer?
 - marketplace.json 加了嗎?version bump 了嗎?本機同名去重了嗎?
