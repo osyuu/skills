@@ -63,6 +63,41 @@ for spec in $SPECS; do
     done
 done
 
+# ---- 訊號 1b：任務全數勾銷，驗收節仍有未勾項（無 AC-ID 的 spec）----
+# design-doc 產出的 spec 刻意不帶 requirement ID，上面的逐條關聯在那種形狀下
+# 永遠配不到，改用檔案級關聯。任務證據認三種形狀：任務節的 checkbox、任務表列
+# （`| T1 |…` 行，含 ✅ 算完成、不含算未完）、同名 `<slug>.tasks.md`（design-doc
+# 模板拆出去的勾選檔）。`- [~]`（明示延後）中性：不算完成也不算未完——全 [~] 的
+# spec 沒有宣稱完成。任務節從未標記過（tdone=0）就不評——沒有宣稱就沒有 drift。
+for spec in $SPECS; do
+    case "$spec" in *.tasks.md) continue ;; esac
+    grep -qE '\*\*AC[0-9]' "$spec" 2>/dev/null && continue
+    tf="${spec%.md}.tasks.md"
+    [ -f "$tf" ] || tf=""
+    awk -v spec="$spec" '
+        BEGIN { sec = "o"; slv = 0 }
+        FILENAME != spec {
+            if      ($0 ~ /^[[:space:]]*- \[[xX]\]/) tdone++
+            else if ($0 ~ /^[[:space:]]*- \[ \]/)    topen++
+            else if ($0 ~ /^\|[[:space:]]*T[0-9]/)   { if ($0 ~ /✅/) tdone++; else topen++ }
+            next
+        }
+        /^#+[[:space:]]/ {
+            lv = 0; while (substr($0, lv + 1, 1) == "#") lv++
+            if      ($0 ~ /^#+[[:space:]]*[0-9.[:space:]]*(任務|Task)/)          { sec = "t"; slv = lv }
+            else if ($0 ~ /^#+[[:space:]]*[0-9.[:space:]]*(驗收標準|Acceptance)/) { sec = "a"; slv = lv }
+            else if (lv <= slv || sec == "o")                                     { sec = "o"; slv = lv }
+            next
+        }
+        sec == "t" && /^[[:space:]]*- \[[xX]\]/ { tdone++ }
+        sec == "t" && /^[[:space:]]*- \[ \]/    { topen++ }
+        sec == "t" && /^\|[[:space:]]*T[0-9]/   { if ($0 ~ /✅/) tdone++; else topen++ }
+        sec == "a" && /^[[:space:]]*- \[ \]/    { acopen++ }
+        END { if (tdone && !topen && acopen)
+            printf "    %s 任務已全數勾銷，但驗收標準仍有 %d 項未勾\n", spec, acopen }
+    ' "$spec" $tf >> "$OUT" 2>/dev/null
+done
+
 # **SRC 為空時只能跳過訊號 2／3，不能整支結束**：訊號 1 只讀 spec 裡的打勾狀態，
 # 不需要原始碼目錄。而下面的 grep 少了 $SRC 會改讀 stdin,所以這道 guard 對 2／3 仍是必要的。
 SRC=""

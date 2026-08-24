@@ -51,6 +51,173 @@ cat > design-doc-x.md <<'EOF'
 EOF
 no "沒宣稱完成就不該報" "AC1" "$(sh "$CHECK" 2>&1)"
 
+printf '\n訊號 1b：無 AC-ID 的 spec（design-doc 形狀）\n'
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [x] core 實作
+- [x] cli 實作
+## 驗收標準
+- [x] 基本計數 — 驗證:單元測試
+- [ ] 分層規則 — 驗證:arch-guard
+EOF
+ok "checkbox 任務全勾、驗收有未勾要報" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [x] core 實作
+- [ ] cli 實作
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+no "任務還有未勾就不該報" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## Task Breakdown
+- [x] core impl
+## Acceptance Criteria
+- [x] basic counting — verified by unit test
+EOF
+no "驗收全勾就不該報" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# design-doc 模板 §16 的預設形狀是表格。從未標記過的表格＝沒有宣稱，不評；
+# 全數 ✅ 的表格＝宣稱完成，要跟驗收對。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 16. 任務分解 (Task Breakdown)
+| # | 任務 | 依賴 |
+| T1 | 做 core | — |
+| T2 | 做 cli | T1 |
+## 17. 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+no "未標記的任務表不算宣稱完成" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## 16. 任務分解 (Task Breakdown)
+| # | 任務 | 依賴 |
+| T1 | 做 core ✅ | — |
+| T2 | 做 cli ✅ | T1 |
+## 17. 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+ok "任務表全 ✅、驗收有未勾要報" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# 混標的任務表（部分 ✅）是最常見的真實狀態——未標列要算未完，不然就是誤報。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務分解
+| T1 | 做 core ✅ | — |
+| T2 | 做 cli | T1 |
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+no "混標任務表不算全數完成" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+cat > design-doc-x.tasks.md <<'EOF'
+- [x] 做 core
+- [ ] 做 cli
+EOF
+no "部分完成的 tasks.md 不算全數完成" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# 一級標題當節也要認得——標題偵測退化成只認 ## 時要有測試變紅。
+fresh
+cat > design-doc-x.md <<'EOF'
+# 任務
+- [x] core 實作
+# 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+ok "一級標題的任務/驗收節也認得" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# `- [~]` 是明示延後，不是完成宣稱——全 [~] 不該報。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [~] core 實作（下期收）
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+no "全部延後不算宣稱完成" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# design-doc 模板允許把勾選拆到同名 <slug>.tasks.md——關聯要跨到那個檔。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+cat > design-doc-x.tasks.md <<'EOF'
+- [x] 做 core
+- [x] 做 cli
+EOF
+ok "sibling tasks.md 全勾、spec 驗收未勾要報" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# 標題匹配要錨定：「後續任務」不是任務節（它的未勾項不該壓掉警告）、
+# 「驗收後注意事項」不是驗收節（它的未勾項不該觸發假警告）。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [x] core 實作
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+## 後續任務
+- [ ] 之後再說的事
+EOF
+ok "「後續任務」的未勾項不壓掉警告" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [x] core 實作
+## 驗收標準
+- [x] 基本計數 — 驗證:單元測試
+## 驗收後注意事項
+- [ ] 上線後觀察記憶體
+EOF
+no "「驗收後注意事項」的未勾項不觸發假警告" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# ### 子節不洗掉任務節狀態；縮排 checkbox 也要計入。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+### Phase 1
+- [x] core 實作
+### Phase 2
+  - [ ] cli 實作
+## 驗收標準
+- [ ] 基本計數 — 驗證:單元測試
+EOF
+no "子節與縮排的未勾任務要算數" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
+# 有 AC-ID 的 spec 歸訊號 1 管，1b 讓路——同一筆 drift 不該報兩行。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 任務
+- [x] T1 做完 ✅ AC1
+## 驗收標準
+- [ ] **AC1** 還沒驗
+EOF
+out=$(sh "$CHECK" 2>&1)
+ok "AC-ID spec 由訊號 1 報" "AC1 還是未打勾" "$out"
+no "AC-ID spec 訊號 1b 不重複報" "任務已全數勾銷" "$out"
+
+# 標題不含 任務/驗收 的檔（如 DECISIONS.md）有未勾項是它自己的事。
+fresh
+cat > design-doc-x.md <<'EOF'
+## 記錄
+- [ ] 2026-01-01 | 某翻案 | 理由 | → 目標
+EOF
+no "非任務/驗收節的未勾項不歸 1b 管" "任務已全數勾銷" "$(sh "$CHECK" 2>&1)"
+
 printf '\n訊號 2：spec 點名的符號有定義卻沒有消費者\n'
 
 fresh
