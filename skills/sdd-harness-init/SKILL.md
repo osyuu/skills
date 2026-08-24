@@ -1,13 +1,12 @@
 ---
 name: sdd-harness-init
 description: >-
-  在一個 repo 裡佈好「決策記錄 + drift 防護」的 SDD harness——建 docs/design/DECISIONS.md、裝
-  hooks/pre-commit（commit 時列出未回寫的翻案、僅警告不擋）、佈線 git core.hooksPath、注入 CLAUDE.md
-  指標節。全程 idempotent（已存在就不覆蓋）。當使用者說「幫這個專案裝 decision log / 決策記錄機制 / drift
+  在一個 repo 裡佈好「決策記錄 + drift 防護」的 SDD harness：DECISIONS.md 記翻案、warn-only 的
+  pre-commit 在 commit 當下把未回寫的攤出來。當使用者說「幫這個專案裝 decision log / 決策記錄機制 / drift
   防護 / SDD harness / pre-commit 決策 hook / 把翻案追蹤機制搬過來 / bootstrap decision log」，或想把這套
   DECISIONS.md 機制套到新專案時，主動使用。也涵蓋「spec 說做了但 code 沒做」這半邊——
   文件宣稱完成卻沒回寫、任務打勾但驗收項沒驗、改到沒人在用的死碼、spec 點名的介面不存在。這是「安裝器 / 佈線」——需求→設計書的『生成』請用 design-doc
-  skill，兩者互補（本 skill 打地基，design-doc 落 spec）。純寫應用 code 不要用。
+  skill。純寫應用 code 不要用。
 ---
 
 # SDD Harness Init — 決策記錄 drift-guard 安裝器
@@ -41,7 +40,7 @@ SDD 最脆的一環是**察覺→記錄→回寫**：spec 與 code 漂移，通�
 
 ## 機制擋不住的三種（判斷題，寫進任務 DoD）
 
-腳本只認得「文件與 code 對不上」。下面三種要靠人/模型自律，但它們今天各出過事，值得逐條列進交付前的自檢：
+腳本只認得「文件與 code 對不上」。下面三種要靠人/模型自律，但它們各出過事，值得逐條列進交付前的自檢：
 
 - **測試與實作同源時，測試沒有驗證能力。** 實作寫 `selectedTab = 0`、測試也斷言 `0`，而訊息寫著「必須切到 Dual」——兩邊出自同一個錯誤信念，它永遠綠。注入故障也救不了：把 0 改成 1 確實變紅，那只證明「測試在檢查某個數字」，不證明檢查的是對的數字。**判準：斷言要指向外部權威**（另一份定義、規格條文、真實資料），不要指向與實作同源的字面值；能收斂成一個具名常數就收斂，讓正確性不再依賴那個值。
 - **注入故障驗的是「測試蓋到那段 code」，不是「那段 code 在產品路徑上」。** 死碼的測試一樣會紅。改完一個東西畫面沒變，第一個假設是「我改的不是產品在用的那份」。
@@ -65,11 +64,12 @@ sh <skill-dir>/scripts/install.sh
 **再處理腳本印出的判斷項**（這些刻意不自動做，需要你/模型拍板）：
 
 1. **填 `<TODO>`**：`DECISIONS.md` 的 `<PROJECT>` 換成 repo 名；「本專案回寫目標」照模板骨架填（API 形狀 → 集中契約或就近 design doc／資料形狀 → schema＋migration／跨層約束 → CLAUDE 檔），刪掉不適用的、把佔位路徑換成 repo 實際檔。骨架已在模板裡，通常微調即可、不必從零發明。
-2. **注入 CLAUDE 指標節**：讀 `assets/claude-section.md`，把 marker 區塊（`<!-- sdd-harness:decision-log:start -->` … `end`）插進適當位置，並填同樣的回寫目標 `<TODO>`。
+2. **填 `spec-claim.conf` 的 `SPEC_SRC_DIRS`／`SPEC_TEST_DIRS`**：預設 `src lib app` 多數 repo 對不上。**填完當場注入故障驗一次**——在受 `SPEC_GLOBS` 涵蓋的 spec 裡加一行宣告不存在的介面，**要用反引號包起來**（腳本只認 `` `foo()` ``）且長度過得了 `SPEC_SYMBOL_MIN_LEN`，跑 `sh hooks/spec-claim-check.sh`，必須開火；驗完把那行刪掉。**不要用「跑一次看看」當驗證**：沒發現時這支腳本完全不輸出，路徑填錯跟真的乾淨長得一模一樣。
+3. **注入 CLAUDE 指標節**：讀 `assets/claude-section.md`，把 marker 區塊（`<!-- sdd-harness:decision-log:start -->` … `end`）插進適當位置，並填同樣的回寫目標 `<TODO>`。
    - **放哪個檔**：團隊共享規範 → `CLAUDE.md`；個人本機約束 → `CLAUDE.local.md`。**repo 完全沒有 CLAUDE 檔時，預設新建 `CLAUDE.md`**——此 harness（版控的 DECISIONS.md＋hook）本質是團隊共享機制。
    - **別重複注入**：已有 marker → 跳過。若腳本回報「有本節標題但 marker 遺失」（多半是 `claude-md-hygiene` 之類重寫工具洗掉了隱形 marker），**就地把既有內容用 marker 重新包起來**，不要新增第二節。
-3. **hook 衝突**：若腳本說目標路徑已有非本機制的 `pre-commit`，**別覆蓋**——把 `assets/pre-commit` 的 marker 區塊附加進既有 hook。若 repo 已用非預設 `core.hooksPath`（husky/.githooks 等），腳本會用那個目錄、不改設定。
-4. **`.git/hooks/` 遮蔽**：若腳本因 `.git/hooks/` 有實體 hook 而跳過佈線，決定是否把它們併進 `hooks/` 再手動 `git config core.hooksPath hooks`。
+4. **hook 衝突**：若腳本說目標路徑已有非本機制的 `pre-commit`，**別覆蓋**——把 `assets/pre-commit` 的 marker 區塊附加進既有 hook。若 repo 已用非預設 `core.hooksPath`（husky/.githooks 等），腳本會用那個目錄、不改設定。
+5. **`.git/hooks/` 遮蔽**：若腳本因 `.git/hooks/` 有實體 hook 而跳過佈線，決定是否把它們併進 `hooks/` 再手動 `git config core.hooksPath hooks`。
 
 ## 收尾提醒
 
@@ -79,14 +79,14 @@ sh <skill-dir>/scripts/install.sh
   本區塊在最常見的狀態（沒有待回寫的決策）early exit，會把**後面所有人的檢查一起靜默跳過**
   ——那看起來跟「對方沒裝」一模一樣。同理，別把自己的區塊接在別人的 `exit` 後面。
 - **hook 是 warn-only（軟約束）**：要硬 gate（擋 merge）得靠 CI 去讀 DECISIONS.md + spec 進版控；pre-commit 本身刻意不擋（改末尾 `exit 0`→`exit 1` 可改成擋，但通常不建議）。
-- 跟 `design-doc` skill 的關係：本 skill 佈好 DECISIONS.md，design-doc 產出的設計書就有地方掛、翻案有地方記。裝完 harness 後要寫 spec，轉 design-doc。
+- 裝完 harness 後要寫 spec，轉 `design-doc`——DECISIONS.md 就是它的翻案落點。
 - 跟 `claim-check` skill **分工明確、不要合併**：本 skill 守的是**這個 repo 的產物**（spec 對不對得上 code），裝在 repo 裡、每個 repo 跑一次；`claim-check` 守的是**agent 的敘述**（說「跑過了」有沒有真的跑），裝在 `~/.claude`、每台機器跑一次。合併會讓「幫第五個專案裝 harness」順手改掉全域 settings——使用者不會預期，事後也難追。兩者的漏洞剛好互補：spec 沒說謊不代表報告沒說謊。
 - 跟 `claude-md-hygiene` skill **不衝突、互補**：本 skill 注入 CLAUDE.md 的那節剛好是 hygiene 要保留的三類（不變式機制＋指向 DECISIONS.md 的指標＋「hooksPath 不進版控」這個踩坑），真正易變的決策本身在 DECISIONS.md、不在 CLAUDE.md，所以 hygiene 會留下這節。唯一要注意：hygiene 若整份重寫 CLAUDE.md 可能洗掉隱形 marker——上面第 2 步的「標題 fallback + 就地重包」已處理，不會重複注入。
 
 ## 品質自檢
 
-- 腳本印的「後續判斷項」都處理了嗎（`<TODO>` 填了、CLAUDE 指標節注入了、`spec-claim.conf` 的路徑填了）？
-- `spec-claim.conf` 的 `SPEC_SRC_DIRS`／`SPEC_TEST_DIRS` 填對了嗎？**填錯會靜默什麼都不報**，跟「很乾淨」長得一模一樣——裝完跑一次確認它真的看得到你的原始碼。
+- 腳本印的「後續判斷項」都處理了嗎（`<TODO>`、`spec-claim.conf` 路徑、CLAUDE 指標節）？
+- `spec-claim.conf` 的路徑**注入故障驗過了嗎**（流程 2）？沒驗過就不知道它是乾淨還是瞎的。
 - 回寫目標有沒有寫死某專案的檔名進**模板/skill**（該只出現在目標 repo 的實體檔）？
 - CLAUDE 指標節放對檔（共享 vs 本機）了嗎？
 - 有沒有覆蓋到既有的 pre-commit / DECISIONS.md？（不該——全 idempotent）
