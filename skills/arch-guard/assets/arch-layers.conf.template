@@ -10,10 +10,15 @@ ROOT="lib"
 PACKAGE="<TODO-package-name>"
 
 # How an import line references a layer. {LAYER} is substituted per layer; the
-# trailing slash matters (so layer "data" doesn't match "database/").
-#   Dart   : import 'package:<pkg>/{LAYER}/
-#   TS/JS  : from ['"].*/{LAYER}/          (path/alias-based)
-#   Python : ^(from|import) <pkg>\.{LAYER}\.
+# pattern MUST close the layer name with a boundary (so layer "data" doesn't
+# match "database"): Dart/TS use the path slash, Python uses a char class —
+# a bare `\.` tail silently misses `from <pkg>.<layer> import x`, the most
+# common Python form (audit prints 0, indistinguishable from clean).
+#   Dart   : import 'package:<pkg>/{LAYER}/       (add (/|\.dart) to also catch barrel files)
+#   TS/JS  : from ['"](@/|\.\.?/)([^'"]*/)?{LAYER}(/|['"])
+#            anchor to your alias/relative prefix — a bare .*/{LAYER} also hits
+#            third-party subpaths ('@angular/core', 'lodash/core') = false positives
+#   Python : ^(from|import) <pkg>\.{LAYER}([^A-Za-z0-9_]|$)
 IMPORT_RE="import 'package:${PACKAGE}/{LAYER}/"
 
 # Layers TOP → BOTTOM. Higher may import lower; never the reverse. Each name is
