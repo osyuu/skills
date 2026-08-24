@@ -65,17 +65,10 @@ sh <skill-dir>/scripts/install.sh
 ```
 複製 checker、seed `hooks/comment-budget.conf`（僅當不存在）、marker-guarded 接進 `hooks/pre-commit`、設 `core.hooksPath hooks`。
 
-**2. 先量基準再決定門檻**——這步不要跳過。拿最近 20–30 個 commit 跑一次，看開火率：
+**2. 先量基準再決定門檻**——這步不要跳過。拿最近的 commit 跑一次，看開火率：
 
 ```sh
-git log --format=%h -25 -- '*.<ext>' | while read c; do
-  git diff-tree --no-commit-id --name-only -r "$c" | while read f; do
-    git diff "$c~1" "$c" -- "$f" | grep '^+' | grep -v '^+++' | awk -v F="$f" '
-      { l=substr($0,2); sub(/^[ \t]+/,"",l)
-        if (l ~ /^\/\//) { c2++; run++; if (run>mx) mx=run } else { run=0; if (l!="") k++ } }
-      END { t=c2+k; if (t>=20) printf "%-50s %2d%%  max %d\n", F, c2*100/t, mx }'
-  done
-done
+sh <skill-dir>/scripts/measure-baseline.sh   # 引數 = commit 數，預設 25
 ```
 
 **對七成 commit 開火 = 噪音，會被無視；完全不開火 = 等於沒裝。** 目標是只有離群值會亮。既有 codebase 若普遍超標，兩種可能都成立（門檻太緊／習慣真的普遍），這時傾向維持門檻、當一次性清債——arch-guard 剛裝上時也抓出九個既有違規，清完之後長期是 0。
@@ -92,6 +85,3 @@ done
   要分辨得做語意判斷，而那正是這支腳本明確不做的事。看到警告時人自己判斷比較快。
 - **管轄範圍看副檔名**，預設涵蓋 `//` `#` `--` 三類，所以 shell 腳本也在內（包含 checker
   自己）。markdown、JSON、YAML 不在內。要排除特定檔案就從 conf 的副檔名清單拿掉。
-- ⚠️ **已知缺口：上面「先量基準」那段 awk 只認 `//`。** checker 本體三類註解符號都認，但基準腳本
-  硬寫了 `/^\/\//`，所以對 Python／Ruby／shell／SQL 一律算出 0%——而 0% 讀起來就是「這個
-  codebase 很乾淨」。用在 `#` 或 `--` 註解的語言上時，那個數字不能拿來定門檻。未修。

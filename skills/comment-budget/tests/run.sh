@@ -114,6 +114,42 @@ out=$(cd wt && sh "$SKILL/scripts/install.sh" 2>&1)
 no "worktree 裡不該拒跑" "run from inside a git repo" "$out"
 cd "$SANDBOX" || exit 1
 
+
+echo "── 基準量測 ──"
+# 守量測的覆蓋面：# 和 -- 若默算 0%，讀起來就是「很乾淨」。
+D=$(newrepo); enter "$D"
+{ i=1; while [ $i -le 11 ]; do echo "# c$i"; i=$((i+1)); done; echo "x = 1"; } > h.py
+git add -A; git -c core.hooksPath=/dev/null commit -qm py >/dev/null 2>&1
+{ i=1; while [ $i -le 16 ]; do echo "-- n$i"; i=$((i+1)); done; echo "SELECT 1;"; } > q.sql
+echo plain > note.txt
+git add -A; git -c core.hooksPath=/dev/null commit -qm sql >/dev/null 2>&1
+out=$(sh "$SKILL/scripts/measure-baseline.sh" 10 2>&1 | strip)
+ok "基準量測認得 # 註解" "h.py" "$out"
+ok "基準量測認得 -- 註解" "q.sql" "$out"
+ok "沒有註解符號的副檔名要列出，不能默算 0%" "txt" "$out"
+cd "$SANDBOX" || exit 1
+
+# 根 commit 的檔案不能被靜默跳過（diff-tree 沒 --root 對根 commit 輸出空）
+D=$(mktemp -d "$SANDBOX/r.XXXXXX"); enter "$D"
+git init -q . && git config user.email t@t && git config user.name t
+{ i=1; while [ $i -le 11 ]; do echo "# c$i"; i=$((i+1)); done; echo "x = 1"; } > root.py
+git add -A; git -c core.hooksPath=/dev/null commit -qm root >/dev/null 2>&1
+out=$(sh "$SKILL/scripts/measure-baseline.sh" 10 2>&1 | strip)
+ok "根 commit 的檔案也要量到" "root.py" "$out"
+cd "$SANDBOX" || exit 1
+
+# 一個檔次都沒量到時要出聲，不能讓空輸出讀成「很乾淨」
+D=$(newrepo); enter "$D"
+out=$(sh "$SKILL/scripts/measure-baseline.sh" 10 2>&1 | strip)
+ok "量不到任何檔次要明講" "一個檔次都沒量到" "$out"
+cd "$SANDBOX" || exit 1
+
+# 兩份 EXT 清單是刻意複製（checker 要能單檔安裝），漂移只有這條測試會抓
+a=$(grep '^EXT_' "$SKILL/scripts/measure-baseline.sh")
+b=$(grep '^EXT_' "$SKILL/assets/comment-budget-check.sh")
+if [ -n "$a" ] && [ "$a" = "$b" ]; then pass=$((pass+1)); echo "  ok    基準腳本與 checker 的副檔名清單一致"
+else fail=$((fail+1)); printf '  FAIL  副檔名清單漂移\n        baseline: %s\n        checker:  %s\n' "$a" "$b"; fi
+
 echo
 echo "通過 ${pass}，失敗 ${fail}"
 [ "$fail" -eq 0 ]
