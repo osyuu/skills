@@ -36,13 +36,11 @@ sh <skill-dir>/scripts/scan-skills.sh
 
 **掃 plugin cache，不掃任何本機 repo**——換一台機器就沒有你的 skill 原始碼，但 cache 一定在。
 
-⚠️ **已知缺口：巢狀分類目錄的 skill 會被靜默丟掉。** 腳本只認 `.../skills/<name>/SKILL.md`，祖父目錄不叫 `skills` 就跳過，所以 `skills/<分類>/<name>/SKILL.md` 這種佈局整批不見（本機實測 507 個 SKILL.md 只收到 472，漏掉的 35 個全是同一個 plugin）。盤點前先對一次總數，差很多就是踩到這個：
+掃描認 `skills/` 底下**最多再兩層分類目錄**（`skills/<分類>/<name>/` 這種巢狀佈局也收）；SKILL.md 往上 3 層內沒有 `skills/` 目錄就不列。盤點前仍值得對一次總數——差額應該全部解釋得了（幻影過濾、orphaned 舊版）：
 
 ```sh
 find -L ~/.claude/plugins/cache -name SKILL.md -type f | wc -l   # 對照腳本輸出的行數
 ```
-
-這是**漏列不是誤列**，而漏列在盤點裡跟「那個 skill 不存在」無法分辨——正是本節開頭說的最致命失敗模式。未修。
 
 從 description 判斷哪些是守門類（會裝 pre-commit / 檢查 / 靜態分析的），對照 repo 現況：
 

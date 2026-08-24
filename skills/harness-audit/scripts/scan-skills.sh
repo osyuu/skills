@@ -49,8 +49,15 @@ fi
 
 find -L "$CACHE" -name SKILL.md -type f 2>/dev/null | while IFS= read -r f; do
     skill_dir=$(dirname "$f")
-    skills_dir=$(dirname "$skill_dir")
-    [ "$(basename "$skills_dir")" = "skills" ] || continue
+    # skills/ 與 SKILL.md 之間可能有分類層（skills/<分類>/<name>/），往上最多找
+    # 3 層；只認直接祖父會把巢狀佈局整批靜默丟掉。到 cache 根就停，不往外找。
+    d=$(dirname "$skill_dir"); skills_dir=""; i=0
+    while [ $i -lt 3 ]; do
+        case "$d" in "$CACHE"|/) break ;; esac
+        if [ "$(basename "$d")" = "skills" ]; then skills_dir="$d"; break; fi
+        d=$(dirname "$d"); i=$((i + 1))
+    done
+    [ -n "$skills_dir" ] || continue
 
     # 舊版本目錄帶 .orphaned_at（約 14 天後才清，寬限期留給還在跑的 session）。
     # 深度不固定：有的是 <ver>/skills/，有的是 <ver>/.claude/skills/。
