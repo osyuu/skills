@@ -41,12 +41,15 @@ for g in $SPEC_GLOBS; do
 done
 [ -z "$SPECS" ] && exit 0
 
-SRC=""
-for d in $SRC_DIRS; do [ -d "$d" ] && SRC="$SRC $d"; done
-[ -z "$SRC" ] && exit 0
-
 OUT=$(mktemp) || exit 0
 trap 'rm -f "$OUT"' EXIT
+
+report() {
+    [ -s "$OUT" ] || return 0
+    printf '\033[33m⚠  spec 宣稱與 code 對不上：\033[0m\n'
+    cat "$OUT"
+    printf '\033[33m   （僅提醒、不阻擋。門檻見 hooks/spec-claim.conf。）\033[0m\n'
+}
 
 # ---- 訊號 1：打勾的任務，驗收項還沒打勾 ----
 for spec in $SPECS; do
@@ -59,6 +62,17 @@ for spec in $SPECS; do
         done
     done
 done
+
+# **SRC 為空時只能跳過訊號 2／3，不能整支結束**：訊號 1 只讀 spec 裡的打勾狀態，
+# 不需要原始碼目錄。而下面的 grep 少了 $SRC 會改讀 stdin,所以這道 guard 對 2／3 仍是必要的。
+SRC=""
+for d in $SRC_DIRS; do [ -d "$d" ] && SRC="$SRC $d"; done
+if [ -z "$SRC" ]; then
+    printf '\033[33m⚠  spec-claim：SPEC_SRC_DIRS 指的目錄一個都不存在（%s），訊號 2／3 已跳過。\033[0m\n' "$SRC_DIRS"
+    printf '\033[33m   （改 hooks/spec-claim.conf。填錯時符號檢查什麼都不報，跟「很乾淨」分不出來。）\033[0m\n'
+    report
+    exit 0
+fi
 
 # ---- 訊號 2／3：spec 點名的符號 ----
 # 帶括號的（`foo()`）視為介面契約，不存在就報；不帶括號的只在「有定義卻沒人用」時報。
@@ -114,8 +128,5 @@ awk -v min="$MIN_LEN" '
     }
 ' srcidx="$SRCIDX" tstidx="$TSTIDX" defs="$DEFS" ignore="$IGNORE_RE" "$SRCIDX" "$TSTIDX" "$DEFS" "$SYMS" >> "$OUT"
 
-[ -s "$OUT" ] || exit 0
-printf '\033[33m⚠  spec 宣稱與 code 對不上：\033[0m\n'
-cat "$OUT"
-printf '\033[33m   （僅提醒、不阻擋。門檻見 hooks/spec-claim.conf。）\033[0m\n'
+report
 exit 0

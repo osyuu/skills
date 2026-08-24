@@ -105,5 +105,26 @@ fresh
 printf '沒有任何符號也沒有任務表。\n' > design-doc-x.md
 no "乾淨的 spec 不該有輸出" "⚠" "$(sh "$CHECK" 2>&1)"
 
+printf '\nSPEC_SRC_DIRS 沒配好時的退化\n'
+
+# 訊號 1 只讀 spec 裡的打勾狀態,不需要原始碼目錄——路徑填錯不該把它一起帶走。
+fresh
+cat > hooks/spec-claim.conf <<'EOF'
+SPEC_SRC_DIRS="no-such-dir"
+SPEC_TEST_DIRS="tests"
+EOF
+cat > design-doc-x.md <<'EOF'
+| T1 | ✅ 做完了 | — | 驗證（AC1） |
+- [ ] **AC1** 這條還沒驗
+EOF
+ok "路徑填錯時訊號 1 仍要開火" "AC1 還是未打勾" "$(sh "$CHECK" 2>&1)"
+ok "路徑填錯本身要出聲" "SPEC_SRC_DIRS" "$(sh "$CHECK" 2>&1)"
+
+# 反面:目錄存在時不該冒出那句警告。
+fresh
+printf 'func f() {}\n' > app/a.swift
+printf '沒有任何符號也沒有任務表。\n' > design-doc-x.md
+no "路徑正確時不該抱怨 SPEC_SRC_DIRS" "SPEC_SRC_DIRS" "$(sh "$CHECK" 2>&1)"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
