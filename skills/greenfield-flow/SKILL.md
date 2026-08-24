@@ -67,17 +67,15 @@ claude-md-hygiene    → greenfield 分支，寫第一份 CLAUDE.md
 **進場條件（兩個都要成立）**：
 
 - **有 15–30 個 commit** — 少於這個量，門檻只能用猜的。對半數改動開火＝噪音、會被學會忽略；完全不開火＝等於沒裝。
-- **要守的東西真的存在** — 層長出來了、而且不是 build system 已經強制的形狀。SwiftPM 的 target graph、Rust 的 crate 邊界都讓反向依賴直接編譯失敗，**那比 grep 強且繞不過**，再加一層文字比對是冗餘。
+- **要守的東西真的存在** — 層長出來了、而且不是 build system 已經強制的形狀（哪些形狀算、為什麼，是 `harness-audit` 的適用性判斷，不在這裡重講）。
 
 條件成立後跑 `harness-audit`：它負責盤點該裝哪些、判斷適用性、**注入故障驗證每一道真的會開火**，並回填 Phase 1 留下的 `<TODO>`。這裡不重複它的內容。
 
 ### Phase 5｜交付前
 
-順序不能顛倒：**驗證全綠 → commit 鎖 baseline → 才 spawn review**。審半成品等於審一個不存在的東西。
+順序不能顛倒：**驗證全綠 → commit 鎖 baseline → 才 spawn review**。
 
-視角怎麼分、派工令要寫什麼、什麼時候才能 stop → `teammate`。語言層的 checklist 走該語言的 review skill。
-
-回環驗收：拿設計書的驗收標準逐條跑，**派沒參與實作的 agent**。翻案的同一批改動回寫 spec、版本 +1。
+review 本身（為什麼要鎖 baseline、視角怎麼分、派工令要寫什麼、什麼時候才能 stop）→ `teammate`。語言層的 checklist 走該語言的 review skill。回環驗收與翻案回寫 → `design-doc` Step 5。
 
 ### Phase 6｜出貨
 
