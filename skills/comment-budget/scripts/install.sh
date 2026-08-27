@@ -47,7 +47,15 @@ if [ -f hooks/pre-commit ]; then
     # **插在最前面**（shebang 與檔頭註解之後）。既有的 pre-commit 不歸我們管，
     # 它可能有中途的 early exit（條件不成立就 `exit 0`）；插在那後面等於平常都不會跑，
     # 而那看起來跟「有守門」一模一樣。本區塊自己不 exit，所以放最前面不影響別人。
-    LINE=$(awk 'NR == 1 && /^#!/ { next } /^[[:space:]]*(#|$)/ { next } { print NR; exit }' hooks/pre-commit)
+    # **marker 行也是註解**，無腦跳過註解會插進別人的區塊裡——那時對方用 marker
+    # 範圍解除安裝會把我們一起帶走，而症狀是靜默少一道守門。
+    LINE=$(awk '
+        NR == 1 && /^#!/ { next }
+        /^#[[:space:]]*>>>/ { if (!bs) bs = NR; next }
+        /^#[[:space:]]*<<</ { bs = 0; next }
+        /^[[:space:]]*(#|$)/ { next }
+        { print (bs ? bs : NR); exit }
+    ' hooks/pre-commit)
     [ -n "$LINE" ] || LINE=$(( $(wc -l < hooks/pre-commit) + 1 ))
     { head -n $((LINE - 1)) hooks/pre-commit
       printf '%s\n\n' "$BLOCK"
@@ -67,6 +75,12 @@ if [ -n "$EXISTING_HP" ] && [ "$EXISTING_HP" != "hooks" ]; then
   echo "comment-budget: core.hooksPath 已是 '$EXISTING_HP' — 未更動；請把 hooks/pre-commit 的區塊併進該目錄"
 elif [ -x .git/hooks/pre-commit ]; then
   echo "comment-budget: .git/hooks/pre-commit 存在會遮蔽 hooksPath — 未佈線；請先合併再自行 git config core.hooksPath hooks"
+elif [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ] &&
+     [ ! -d "$(dirname "$(git rev-parse --git-common-dir)")/hooks" ]; then
+  # linked worktree：`git config` 寫的是**共用**的 config。主 checkout 沒有 hooks/
+  # 時，設下去等於關掉它的所有 hook——裝一道守門的副作用是關掉別處的全部。
+  echo "comment-budget: 這是 linked worktree，且主 checkout 沒有 hooks/ — 未佈線"
+  echo "                請先在主 checkout commit 出 hooks/，再自行 git config core.hooksPath hooks"
 else
   git config core.hooksPath hooks
   echo "comment-budget: core.hooksPath → hooks"

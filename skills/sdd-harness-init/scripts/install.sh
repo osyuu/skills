@@ -108,6 +108,12 @@ if [ "$WIRE_DEFAULT" = yes ]; then
   if [ -n "$SHADOWED" ]; then
     todo "偵測到 .git/hooks/ 有實體 hook（$SHADOWED …）；設 core.hooksPath=hooks 會停用它們。"
     add_followup "決定是否把 .git/hooks/ 的既有 hook 併進 hooks/，再手動 \`git config core.hooksPath hooks\`。此步已跳過以免誤停。"
+  elif [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ] &&
+       [ ! -d "$(dirname "$(git rev-parse --git-common-dir)")/hooks" ]; then
+    # `git config` 寫的是**共用** config。主 checkout 沒有 hooks/ 時設下去，
+    # 等於關掉它的所有 hook——裝一道守門的副作用是關掉別處的全部。
+    todo "這是 linked worktree，且主 checkout 沒有 hooks/：現在設 core.hooksPath 會讓主 checkout 的 hook 全部失效。"
+    add_followup "先在主 checkout commit 出 hooks/，再手動 \`git config core.hooksPath hooks\`。此步已跳過。"
   else
     git config core.hooksPath hooks
     ok "git config core.hooksPath hooks（已佈線；fresh clone/worktree 需各自再跑一次）。"

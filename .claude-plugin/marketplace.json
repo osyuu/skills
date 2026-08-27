@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.11.0"
+    "version": "1.13.0"
   },
   "plugins": [
     {
@@ -38,7 +38,7 @@
     },
     {
       "name": "claude-md-hygiene",
-      "description": "Audit or rewrite a project's agent-facing CLAUDE.md/AGENTS.md so it stays stable norms + landmines only — push volatile status/todos/contract/design detail out to living docs, keep only invariants + pointers, and grep-verify every referenced symbol still exists.",
+      "description": "Audit or rewrite the agent-facing norm files loaded every session (CLAUDE.md / AGENTS.md) so they carry invariants and landmines only — status, todos and contract detail move to living docs, leaving a pointer. Registers a PostToolUse hook so the next edit to those files gets the same judgment applied, and the file does not rot a second time.",
       "source": "./",
       "strict": false,
       "skills": [

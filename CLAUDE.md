@@ -12,6 +12,8 @@ Osyuu 的個人 Claude Code skill marketplace。撰寫與登錄的房規見 `ski
 
 **fresh clone / 新 worktree 要先跑 `git config core.hooksPath hooks`** —— 此設定不進版控，沒設就是全部靜默失效，而那看起來跟有守門一模一樣。
 
+常駐規範檔的複查走 `.claude/settings.json` 的 PostToolUse hook，不在這張表裡——它在**編輯當下**開火，不等到 commit。
+
 不裝 arch-guard（沒有分層可守）與 sdd-harness-init（沒有設計書）。**裝一道不會開火的守門比不裝更糟**：它讓人以為那條規則有人在看。
 
 ## 踩坑

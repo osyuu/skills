@@ -114,6 +114,31 @@ out=$(cd wt && sh "$SKILL/scripts/install.sh" 2>&1)
 no "worktree 裡不該拒跑" "run from inside a git repo" "$out"
 cd "$SANDBOX" || exit 1
 
+echo "── 與別的守門共存 ──"
+# 插入點若把 marker 行當普通註解跳過，就會落進鄰居的區塊內；鄰居用 marker 範圍
+# 解除安裝時會把這道守門一起帶走，而症狀是靜默少一道。
+D=$(newrepo); enter "$D"; mkdir -p hooks
+printf '#!/bin/sh\n# >>> other >>>\nsh "$(dirname "$0")/other.sh" || true\n# <<< other <<<\n' > hooks/pre-commit
+printf '#!/bin/sh\necho OTHER-GUARD\n' > hooks/other.sh; chmod +x hooks/pre-commit hooks/other.sh
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
+ok "移除鄰居後本守門還在" "comment-budget-check.sh" "$left"
+long_block > a.dart; git add -A
+out=$(sh hooks/pre-commit 2>&1 | strip)
+ok "兩道守門都跑得到" "單一註解區塊 11 行" "$out"
+ok "鄰居仍在"         "OTHER-GUARD"      "$out"
+cd "$SANDBOX" || exit 1
+
+echo "── worktree 不得關掉主 repo 的守門 ──"
+# core.hooksPath 寫的是**共用** config。主 checkout 沒有 hooks/ 時設下去，
+# 等於把它的所有 hook 關掉——裝一道守門的副作用是關掉別處的全部。
+D=$(newrepo); enter "$D"; git worktree add -q "$D/../w2.$$" -b w2 >/dev/null 2>&1
+( cd "$D/../w2.$$" && sh "$SKILL/scripts/install.sh" >/dev/null 2>&1 )
+enter "$D"
+hp=$(git config --get core.hooksPath || echo unset)
+ok "主 repo 的 hooksPath 未被動到" "unset" "$hp"
+cd "$SANDBOX" || exit 1
+
 echo
 echo "通過 ${pass}，失敗 ${fail}"
 [ "$fail" -eq 0 ]

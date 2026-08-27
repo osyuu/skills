@@ -14,7 +14,11 @@ set -e
 SKILL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)   # skill root
 ASSETS="$SKILL_DIR/assets"
 
-[ -d .git ] || { echo "arch-guard: run from a git repo root (.git not found)"; exit 1; }
+# 不能用 `[ -d .git ]`：worktree 的 `.git` 是**檔案**，那樣寫會在 worktree 裡拒跑，
+# 而且錯誤訊息還說「找不到」——它就在那裡。
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+  echo "arch-guard: run from inside a git repo"; exit 1; }
+cd "$(git rev-parse --show-toplevel)"
 mkdir -p hooks
 
 # 1. checker (always refresh — it's the tool, versioned by the skill)
@@ -41,17 +45,22 @@ if [ -f hooks/pre-commit ]; then
   else
     # 不能無腦 append：dispatcher 常以頂層 `exit 0` 收尾，接在它後面的區塊永遠
     # 不會執行——裝了卻不觸發是最糟的失敗（看起來有守門，其實沒有）。
-    if awk '/^exit 0$/ { f = 1 } END { exit !f }' hooks/pre-commit; then
-      LINE=$(awk '/^exit 0$/ { n = NR } END { print n }' hooks/pre-commit)
-      { head -n $((LINE - 1)) hooks/pre-commit
-        printf '%s\n\n' "$BLOCK"
-        tail -n +"$LINE" hooks/pre-commit
-      } > hooks/pre-commit.tmp && mv hooks/pre-commit.tmp hooks/pre-commit
-      echo "arch-guard: inserted checker call before the trailing 'exit 0'"
-    else
-      printf '\n%s\n' "$BLOCK" >> hooks/pre-commit
-      echo "arch-guard: appended checker call to existing hooks/pre-commit"
-    fi
+    # 插在第一個「真的會執行」的行之前：既有 hook 可能有**中段**的 early exit，
+    # 只找行尾的 `exit 0` 會漏掉。**marker 行也是註解**，跳過註解時要認得它們，
+    # 否則會插進別人的區塊內——對方用 marker 範圍解除安裝時會把我們一起帶走。
+    LINE=$(awk '
+        NR == 1 && /^#!/ { next }
+        /^[[:space:]]*#[[:space:]]*>>>/ { d++; if (d == 1) bs = NR; next }
+        /^[[:space:]]*#[[:space:]]*<<</ { if (d > 0) d--; if (d == 0) bs = 0; next }
+        /^[[:space:]]*(#|$)/ { next }
+        { print (bs ? bs : NR); exit }
+    ' hooks/pre-commit)
+    [ -n "$LINE" ] || LINE=$(( $(wc -l < hooks/pre-commit) + 1 ))
+    { head -n $((LINE - 1)) hooks/pre-commit
+      printf '%s\n\n' "$BLOCK"
+      tail -n +"$LINE" hooks/pre-commit
+    } > hooks/pre-commit.tmp && mv hooks/pre-commit.tmp hooks/pre-commit
+    echo "arch-guard: inserted checker call into hooks/pre-commit"
   fi
 else
   printf '%s\n%s\n' '#!/bin/sh' "$BLOCK" > hooks/pre-commit
@@ -60,8 +69,24 @@ fi
 chmod +x hooks/pre-commit
 
 # 4. hooksPath wiring (idempotent)
-git config core.hooksPath hooks
-echo "arch-guard: core.hooksPath → hooks"
+# 無條件覆寫會**靜默停用**既有佈線（husky/.githooks），既有 hook 從此不再跑；
+# 而 `git config` 寫的是**共用** config，在 linked worktree 裡設會讓主 checkout
+# 也指向一個它沒有的 hooks/。兩種都是「裝一道守門把別處全關掉」。
+EXISTING_HP=$(git config --get core.hooksPath 2>/dev/null || true)
+GITDIR=$(git rev-parse --git-dir); COMMON=$(git rev-parse --git-common-dir)
+if [ -n "$EXISTING_HP" ] && [ "$EXISTING_HP" != "hooks" ]; then
+  echo "arch-guard: core.hooksPath 已是 '$EXISTING_HP' — 未更動；請把 hooks/pre-commit 的區塊併進該目錄"
+  echo "arch-guard: ⚠  尚未佈線，git 不會執行 hooks/pre-commit"
+elif [ -x .git/hooks/pre-commit ]; then
+  echo "arch-guard: .git/hooks/pre-commit 存在會遮蔽 hooksPath — 未佈線；請先合併"
+  echo "arch-guard: ⚠  尚未佈線，git 不會執行 hooks/pre-commit"
+elif [ "$GITDIR" != "$COMMON" ] && [ ! -d "$(dirname "$COMMON")/hooks" ]; then
+  echo "arch-guard: 這是 linked worktree，且主 checkout 沒有 hooks/ — 未佈線"
+  echo "arch-guard: ⚠  現在設會讓主 checkout 的 hook 全部失效；請先在主 checkout commit 出 hooks/"
+else
+  git config core.hooksPath hooks
+  echo "arch-guard: core.hooksPath → hooks"
+fi
 
 echo
 echo "Next (agent / you):"

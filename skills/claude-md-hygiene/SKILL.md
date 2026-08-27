@@ -1,14 +1,12 @@
 ---
 name: claude-md-hygiene
 description: >-
-  審查或重寫專案的 agent 常駐指南（CLAUDE.md / CLAUDE.local.md / AGENTS.md 等每個
-  session 都載入的規範檔），讓它只留「不常變的規範」而不腐爛。當使用者說「整理 / 重構 / review
-  這個 CLAUDE.md」「CLAUDE.md 越來越亂 / 塞太多待辦 / 過期了 / 會誤導」「這條規範還準嗎」「幫我
-  訂 CLAUDE.md 架構 / 寫第一份 CLAUDE.md（專案初期 greenfield）」，或你正在編輯任何 CLAUDE.md／建立
-  專案常駐指南／發現規範檔混入了當期狀態·待辦·API 契約細節時，主動使用。核心動作＝把易變內容（狀態 /
-  待辦 / 契約 / 設計細節）踢到活文件、CLAUDE.md 只留不變式與踩坑禁區 + 指標；greenfield 需求還糊則先
-  交棒 design-doc 收斂再寫。純寫「需求→設計書」本身用 design-doc；純寫應用 code、或寫給人看的 README
-  不要用。
+  審查或重寫每個 session 都載入的 agent 常駐指南（CLAUDE.md / AGENTS.md / CLAUDE.local.md），
+  讓它只留不變式與踩坑禁區——當期狀態、待辦、契約細節一律踢到活文件，本檔留一句指標。
+  當使用者說「整理 / review 這個 CLAUDE.md」「它過期了 / 會誤導 / 怎麼一直長回一堆狀態」
+  「這條規範還準嗎」，或你正在編輯任何常駐指南時，主動使用。三條路徑：既有檔的審查重寫、
+  專案初期的第一份（需求還糊先交棒 design-doc）、審完註冊一道 PostToolUse hook 防復發。
+  純寫「需求→設計書」用 design-doc；寫給人看的 README 用一般文件寫作。
 ---
 
 # CLAUDE.md Hygiene — 常駐規範檔別腐爛
@@ -74,6 +72,33 @@ grep -rn '^@' CLAUDE.md                        # @import 進來的也算常駐,�
 ### Phase 5｜套用後自驗
 
 用 Edit 套用,然後**對自己剛寫的成品**把 [grep-verify](#審查必做grep-verify別信散文) 的兩個 grep 都跑一次(#1 完成態掃描、#2 symbol 存在),再回報。跳過自驗 = 你很可能剛把新的狀態句寫進去。
+
+### Phase 6｜裝守門防復發（審完才裝，順序不可顛倒）
+
+**一次性審查防不了第二次腐爛。** 狀態句會再長回來，而常駐規範檔是「每個 session 都載入、
+卻沒有任何測試會證偽它」的組合——腐爛在這裡是結構性的，不是誰不夠勤勞。
+
+```sh
+sh <skill-dir>/scripts/install.sh      # 註冊 PostToolUse hook，寫進 .claude/settings.json
+```
+
+agent 每次改到 `CLAUDE.md` / `AGENTS.md` / `CLAUDE.local.md`，hook 就把本節的判準注回
+模型的 context，要它複查**那一次的改動**。同一個 session 對同一個檔只注入一次——複查
+若順手改了那個檔會再觸發，而 hook 沒有內建的迴圈防護。
+
+**偵測是機械的，判斷不是。** 只比對檔名，不猜內容。這是刻意的：這道守門原本用正規表達式
+詞表判「這句是不是狀態」，量出來是漏抓 67%、誤報 25%，而且**兩種錯都收斂不了**——
+「不准留 TODO」是規則、「TODO: 接上重試」是狀態，差別在語意不在字面。詞表看不見那條界線，
+已經在場的模型看得見。
+
+**先審再裝。** 裝在一份還沒整理的檔案上，第一次編輯就會叫模型去審一堆既有問題——那不是
+這道 hook 的用途，而每次都叫的守門會被關掉。
+
+**它守不到的，要寫進 CLAUDE.md**：hook 只在 Claude Code 裡的編輯上開火。人用編輯器直接
+改、或別的工具改，它一句話都不會說。這是接受的缺口，不是疏漏——**寫出來的缺口才有人記得**。
+
+**驗它**：新開一個 session（現在這個讀不到剛寫的設定），改一行 CLAUDE.md，看模型有沒有
+被要求複查。另一個方向也要驗：改 `README.md` 不該有任何反應。
 
 ## 三分類（決定每一行的去留）
 
