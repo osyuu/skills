@@ -10,9 +10,13 @@ disable-model-invocation: true
 
 # greenfield-flow — 0→1 的進場順序
 
-> **刻意退出 skill 清單。** 它的內容是「先做 A 再做 B」的順序,不是某個請求的解法——
-> 模型自動觸發它,只會在別的 skill 該進場時搶著講流程。使用者仍打得到
-> `/greenfield-flow`;`user-invocable: false` 才是連使用者也叫不到。
+> **刻意設成只有使用者叫得到。** 它的內容是「先做 A 再做 B」的順序,不是某個請求的解法——
+> 模型自動觸發它,只會在別的 skill 該進場時搶著講流程。
+>
+> `disable-model-invocation: true` 的語意比「退出清單」更強:它同時讓這支**退出模型的
+> skill 清單**,並讓**模型用 Skill 工具也叫不動**(harness 會擋下來,回「請使用者自己跑
+> `/greenfield-flow`」)。使用者的 `/greenfield-flow` 照設計留著;`user-invocable: false`
+> 才是連使用者也叫不到。
 
 ## 這在解什麼問題
 

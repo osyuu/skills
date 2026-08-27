@@ -54,8 +54,9 @@ Osyuu 的個人 Claude Code skill marketplace,跨開發環境共用。一個 `ma
 - 新增 skill:放進 `skills/<category>/<name>/`,在 `marketplace.json` 的 `plugins[]`
   加一筆(`"skills": ["./skills/<category>/<name>"]`)。房規見
   `skills/workflow/skill-authoring/SKILL.md`。
-- 改完 skill 要 bump `.claude-plugin/marketplace.json` 的 `metadata.version` 並 push。
-  傳播靠 git HEAD(`autoUpdate` 預設開),version 是給人讀的變更標記。
+- 改完 skill 要 bump `.claude-plugin/marketplace.json` 的 `metadata.version` 並 push,
+  然後**每台機器各自跑一次 `/plugin update`**——實測開新 session 不會自動拉(見
+  `skills/workflow/skill-authoring/SKILL.md`)。追的是 git HEAD,version 只是給人讀的標記。
 - 否決過的路連理由存在 `.out-of-scope/`——只記結論會讓人再走一遍。
 
 ## 注意
