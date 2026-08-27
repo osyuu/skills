@@ -133,4 +133,4 @@ pattern、少一個欄位、多一層跳脫,全都回「沒有發現」——而
 - 這個 skill 值得這麼多內容嗎,還是為填版而灌水?
 - 進階手法(分診/severity/ID/腳本)是這個 skill 真的需要,還是 over-engineer?
 - marketplace.json 加了嗎?version bump 了嗎?本機同名去重了嗎?
-- 有 bundled script 的話,`tests/` 跟著更新了嗎?改壞它會不會有測試變紅?
+- 有 bundled script 的話,`tests/mutants.sh` 有新增對應的注入嗎?**別靠自己記得**——這條規則寫在這裡也擋不住,本 repo 連犯三次「改了行為沒補測試」,每次都是綠燈。改用跑的:`sh tests/mutants.sh`,每條注入都必須讓 `run.sh` 變紅,pre-commit 也會在你動到該 skill 時自己跑一次。

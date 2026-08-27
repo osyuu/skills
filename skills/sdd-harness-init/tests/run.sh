@@ -90,6 +90,16 @@ out=$(sh hooks/pre-commit 2>&1 | strip)
 ok "接在本區塊後面的東西仍會執行" "TAIL_RAN" "$out"
 cd "$SANDBOX" || exit 1
 
+echo "── worktree 不得關掉主 repo 的守門 ──"
+# core.hooksPath 寫的是**共用** config。主 checkout 沒有 hooks/ 時設下去，
+# 等於關掉它的所有 hook——裝一道守門的副作用是關掉別處的全部。
+D=$(newrepo); enter "$D"
+git worktree add -q "$D/../w.$$" -b w >/dev/null 2>&1
+( cd "$D/../w.$$" && sh "$SKILL/scripts/install.sh" >/dev/null 2>&1 )
+enter "$D"
+ok "主 repo 的 hooksPath 未被動到" "unset" "$(git config --get core.hooksPath || echo unset)"
+cd "$SANDBOX" || exit 1
+
 echo
 echo "通過 ${pass}，失敗 ${fail}"
 [ "$fail" -eq 0 ]

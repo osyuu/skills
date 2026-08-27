@@ -138,6 +138,43 @@ ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" --strict >/dev/null 2>&1
 ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" >/dev/null 2>&1
 [ $? -eq 0 ] && { pass=$((pass + 1)); echo "  ok    warn 模式恆 exit 0"; } || { fail=$((fail + 1)); echo "  FAIL  warn 模式應 exit 0"; }
 
+# ── 安裝器 ──────────────────────────────────────────────────────────────
+# checker 之外，install.sh 自己也有靜默失效面：拒跑 worktree、插進別人的 marker
+# 區塊裡、把主 repo 的 hooksPath 指向一個它沒有的目錄。全都不會報錯。
+INSTALL="$HERE/../scripts/install.sh"
+ok2() { case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
+  *) fail=$((fail+1)); printf '  FAIL  %s\n        期望含：%s\n        實得：%s\n' "$1" "$2" "$3" ;; esac; }
+no2() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
+  *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
+newrepo2() {
+  d=$(mktemp -d "$WORK/i.XXXXXX")
+  ( cd "$d" && git init -q . && git config user.email t@t && git config user.name t &&
+    echo s > s.txt && git add -A && git -c core.hooksPath=/dev/null commit -qm init ) >/dev/null 2>&1
+  printf '%s' "$d"
+}
+
+echo "── 安裝器 ──"
+D=$(newrepo2); cd "$D" || exit 1
+git worktree add -q "$D/../w.$$" -b w >/dev/null 2>&1
+out=$(cd "$D/../w.$$" && sh "$INSTALL" 2>&1)
+no2 "worktree 裡不該拒跑" "run from inside a git repo" "$out"
+cd "$D" || exit 1
+ok2 "worktree 安裝不得動到主 repo 的 hooksPath" "unset" "$(git config --get core.hooksPath || echo unset)"
+
+D=$(newrepo2); cd "$D" || exit 1
+mkdir -p hooks
+printf '#!/bin/sh\n  # >>> other >>>\n  echo OTHER\n  # <<< other <<<\necho REAL\n' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$INSTALL" >/dev/null 2>&1
+left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
+ok2 "縮排的 marker 也認得（不被鄰居吞掉）" "arch-guard-check.sh" "$left"
+
+D=$(newrepo2); cd "$D" || exit 1
+mkdir -p .husky; git config core.hooksPath .husky
+sh "$INSTALL" >/dev/null 2>&1
+ok2 "既有 hooksPath 不被覆寫" ".husky" "$(git config --get core.hooksPath)"
+cd "$WORK" || exit 1
+
 echo
 echo "通過 ${pass}，失敗 ${fail}"
 [ "$fail" -eq 0 ]
