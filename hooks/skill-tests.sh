@@ -29,6 +29,20 @@ printf '%s\n' "$changed" | sed -E 's#/(scripts|assets|tests)/.*$##' | sort -u | 
         printf '%s\n' "$out" | grep -E '✗|FAIL' | head -5 | sed 's/^/    /'
         continue
     fi
+    # tests/ 下的其他 *.sh 也要跑。只認 run.sh 的閘門會讓新增的測試檔靜默不跑，
+    # 而「沒有輸出」跟「全過」在畫面上同形。踩過：spec-claim.sh 的 32 條斷言
+    # 從加進來那天起就沒有任何閘門在跑。
+    for x in "$d"/tests/*.sh; do
+        [ -f "$x" ] || continue
+        case "${x##*/}" in run.sh|mutants.sh) continue ;; esac
+        if xout=$(sh "$x" 2>&1); then
+            printf '\033[32m✓ skill-tests：%s/%s %s\033[0m\n' "$s" "${x##*/}" \
+                "$(printf '%s' "$xout" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+|通過 [0-9]+，失敗 [0-9]+|[0-9]+ passed, [0-9]+ failed' | tail -1)"
+        else
+            printf '\033[33m⚠  skill-tests：%s/%s 沒過\033[0m\n' "$s" "${x##*/}"
+            printf '%s\n' "$xout" | grep -E '✗|FAIL' | head -3 | sed 's/^/    /'
+        fi
+    done
     # 綠燈只說「現有斷言沒被違反」，說不了「這段新 code 有人守」。改了行為卻沒補
     # 測試，輸出跟真的守住一模一樣——這個疏漏在本 repo 連犯三次，所以改用跑的。
     m="$d/tests/mutants.sh"

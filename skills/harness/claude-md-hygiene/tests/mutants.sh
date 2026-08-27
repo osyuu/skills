@@ -19,13 +19,18 @@ NAME=$(basename "$SKILL")
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 pass=0; fail=0
 
-# 先確認基準是綠的——基準本來就紅的話，每個注入都會「成功」變紅而證明不了任何事。
-if ! sh "$SKILL/tests/run.sh" >/dev/null 2>&1; then
-  echo "基準測試沒過，突變測試無意義。先修 tests/run.sh。"; exit 2
+prep() { rm -rf "$SB/w"; cp -R "$SKILL" "$SB/w"; }
+
+# 基準要打在**複本**上——注入跑的是複本，而複本可能因為少了相依，在零注入時
+# 就已經是紅的。基準打在原地時那些注入全部免費「轉紅」，印出來的畫面跟真的有
+# 覆蓋一模一樣。踩過：sdd-harness-init 整支就是這樣空轉的。
+prep
+if ! sh "$SB/w/tests/run.sh" >/dev/null 2>&1; then
+  echo "基準測試在複本裡就沒過，突變測試無意義（複本少了什麼相依？）。"; exit 2
 fi
 
 mut() { # mut <名稱> <相對檔案> <python 表達式：s 為原始內容，回傳新內容>
-  rm -rf "$SB/w"; cp -R "$SKILL" "$SB/w"
+  prep
   python3 -c "
 import pathlib,sys
 p=pathlib.Path('$SB/w/$2'); s=p.read_text()
@@ -49,6 +54,7 @@ H=assets/claude-md-hygiene-hook.py
 I=scripts/install.sh
 mut "WATCHED 少一個檔名"        "$H" "s.replace('\"AGENTS.md\", ', '')"
 mut "拿掉迴圈防護"              "$H" "s.replace('if stamp.exists():', 'if False:')"
+mut "缺 session 退回固定 key"    "$H" "s.replace('if isinstance(session, str) and session:', 'session = session or \\'nosession\\'\\n    if True:')"
 mut "拿掉 tool_input 型別檢查"   "$H" "s.replace('if not isinstance(tool_input, dict):', 'if False:')"
 mut "改成比對完整路徑"          "$H" "s.replace('name = os.path.basename(path)', 'name = path')"
 mut "hookEventName 打錯"       "$H" "s.replace('\"hookEventName\": \"PostToolUse\"', '\"hookEventName\": \"Zz\"')"

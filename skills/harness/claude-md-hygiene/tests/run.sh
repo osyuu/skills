@@ -54,6 +54,11 @@ ok "第一次注入"           'additionalContext' "$(fire s1 /r/CLAUDE.md)"
 no "同 session 同檔不再注入" 'additionalContext' "$(fire s1 /r/CLAUDE.md)"
 ok "同 session 換檔仍注入"   'additionalContext' "$(fire s1 /r/AGENTS.md)"
 ok "換 session 仍注入"       'additionalContext' "$(fire s2 /r/CLAUDE.md)"
+# 拿不到 session_id 時退回一個共用的固定 key，會讓那個路徑在**所有**未來的
+# session 都靜音（stamp 不過期），而畫面上跟「這次沒有要複查」一模一樣。
+nosess() { printf '{"tool_input":{"file_path":"/r/CLAUDE.md"}}' | python3 "$HOOK" 2>&1; }
+ok "缺 session_id 第一次仍注入"  'additionalContext' "$(nosess)"
+ok "缺 session_id 不會就此靜音"  'additionalContext' "$(nosess)"
 
 echo "── 壞輸入不得讓 hook 爆掉 ──"
 # hook 失敗會干擾工具流程，所以任何形狀的輸入都必須 exit 0。

@@ -13,7 +13,8 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
-SDD=$(cd "$SKILL/../sdd-harness-init" && pwd)
+# 找不到就硬失敗：空字串會讓依賴它的斷言變成在測空氣，而畫面上是綠的。
+SDD=$(cd "$SKILL/../sdd-harness-init" && pwd) || { echo "找不到兄弟 skill sdd-harness-init"; exit 2; }
 
 # **先進沙箱再做任何事。** 這支會 git init、寫檔、跑 install；在呼叫者的 cwd 執行
 # 等於把測試 fixture 灌進別人的 repo。路徑先解析成絕對路徑,cd 之後才用得到。
@@ -169,6 +170,24 @@ long_block > a.dart; git add -A
 out=$(sh hooks/pre-commit 2>&1 | strip)
 ok "兩道守門都跑得到" "單一註解區塊 11 行" "$out"
 ok "鄰居仍在"         "OTHER-GUARD"      "$out"
+cd "$SANDBOX" || exit 1
+
+D=$(newrepo); enter "$D"; mkdir -p hooks
+printf '#!/bin/sh\n  # >>> other >>>\n  echo OTHER\n  # <<< other <<<\necho REAL\n' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
+ok "縮排的 marker 也認得（不被鄰居吞掉）" "comment-budget-check.sh" "$left"
+cd "$SANDBOX" || exit 1
+
+D=$(newrepo); enter "$D"; mkdir -p hooks
+printf '#!/bin/sh\n# >>> outer >>>\n# >>> inner >>>\n# <<< inner <<<\necho OUTER\n# <<< outer <<<\necho REAL\n' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+left=$(sed '/# >>> outer >>>/,/# <<< outer <<</d' hooks/pre-commit)
+# inner 區塊裡刻意不放可執行行：放了的話 awk 在遇到任何 <<< 之前就 print 並
+# exit，收合邏輯走不到，這條斷言會變成在測空氣。
+ok "巢狀 marker 收在最外層才算結束" "comment-budget-check.sh" "$left"
 cd "$SANDBOX" || exit 1
 
 echo "── worktree 不得關掉主 repo 的守門 ──"

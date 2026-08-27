@@ -47,13 +47,18 @@ def main() -> int:
     if name not in WATCHED:
         return 0
 
-    session = payload.get("session_id") or "nosession"
-    key = hashlib.sha256(f"{session}:{path}".encode()).hexdigest()[:16]
-    stamp = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "claude-md-hygiene" / key
-    if stamp.exists():
-        return 0
-    stamp.parent.mkdir(parents=True, exist_ok=True)
-    stamp.touch()
+    # 迴圈防護只在拿得到 session_id 時做。退回一個固定的代用 key 會讓**所有**
+    # session 共用同一個 stamp，而 stamp 不過期——那個檔案從此在每個 session 都
+    # 靜音，畫面上跟「這次沒有要複查」完全一樣。寧可多吵一次，不要靜默停用。
+    # 路徑取絕對值：相對與絕對寫法指同一個檔，否則同一次編輯會開火兩次。
+    session = payload.get("session_id")
+    if isinstance(session, str) and session:
+        key = hashlib.sha256(f"{session}:{os.path.abspath(path)}".encode()).hexdigest()[:16]
+        stamp = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "claude-md-hygiene" / key
+        if stamp.exists():
+            return 0
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.touch()
 
     json.dump(
         {

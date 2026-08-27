@@ -13,7 +13,8 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
-CB=$(cd "$SKILL/../comment-budget" && pwd)
+# 找不到就硬失敗：空字串會讓依賴它的斷言變成在測空氣，而畫面上是綠的。
+CB=$(cd "$SKILL/../comment-budget" && pwd) || { echo "找不到兄弟 skill comment-budget"; exit 2; }
 
 # 先進沙箱：這支會 git init、寫檔、跑 install，在呼叫者的 cwd 執行等於污染別人的 repo。
 SANDBOX=$(mktemp -d)

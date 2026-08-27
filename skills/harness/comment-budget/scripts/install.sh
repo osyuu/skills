@@ -44,11 +44,12 @@ if [ -f hooks/pre-commit ]; then
     # 插在最前面（shebang 與檔頭註解之後），不是 append：既有 hook 的中途 exit
     # 會讓接在後面的區塊永遠不跑。依據見 SKILL.md〈與別人共用同一支 pre-commit〉。
     # **marker 行也是註解**，無腦跳過會插進別人的區塊裡——對方用 marker 範圍
-    # 解除安裝時會把我們一起帶走，而症狀是靜默少一道守門。
+    # 解除安裝時會把我們一起帶走，而症狀是靜默少一道守門。marker 可能**有縮排**
+    # 也可能**巢狀**，所以錨點不能釘在第 0 欄，收合要靠深度計數。
     LINE=$(awk '
         NR == 1 && /^#!/ { next }
-        /^#[[:space:]]*>>>/ { if (!bs) bs = NR; next }
-        /^#[[:space:]]*<<</ { bs = 0; next }
+        /^[[:space:]]*#[[:space:]]*>>>/ { d++; if (d == 1) bs = NR; next }
+        /^[[:space:]]*#[[:space:]]*<<</ { if (d > 0) d--; if (d == 0) bs = 0; next }
         /^[[:space:]]*(#|$)/ { next }
         { print (bs ? bs : NR); exit }
     ' hooks/pre-commit)
