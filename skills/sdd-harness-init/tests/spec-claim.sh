@@ -5,6 +5,12 @@
 # repo 長得一模一樣。三個訊號各要有正例與反例，否則沒人知道它到底有沒有在做事。
 
 set -u
+# `git commit` 會把 GIT_DIR / GIT_INDEX_FILE 之類傳給 hook，沙箱裡的 git 會因此
+# 操作到**外層** repo，測試結果變成在量別人。單獨跑時全綠、從 pre-commit 跑時
+# 隨機紅——比沒有測試更糟。
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_COMMON_DIR GIT_CONFIG_PARAMETERS 2>/dev/null || true
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 CHECK=$(cd "$HERE/.." && pwd)/assets/spec-claim-check.sh
 

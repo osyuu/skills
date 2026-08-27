@@ -2,6 +2,12 @@
 # handoff 的機械盤點測試。`sh tests/run.sh` 直接跑。
 # 守的是「盤點腳本自己說謊」：乾淨的 repo 報成有殘留、或有殘留卻報乾淨。
 set -u
+# `git commit` 會把 GIT_DIR / GIT_INDEX_FILE 之類傳給 hook，沙箱裡的 git 會因此
+# 操作到**外層** repo，測試結果變成在量別人。單獨跑時全綠、從 pre-commit 跑時
+# 隨機紅——比沒有測試更糟。
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_COMMON_DIR GIT_CONFIG_PARAMETERS 2>/dev/null || true
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 ST=$(cd "$HERE/.." && pwd)/scripts/state.sh
 SANDBOX=$(mktemp -d); trap 'cd /; rm -rf "$SANDBOX"' EXIT
