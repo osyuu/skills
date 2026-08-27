@@ -55,6 +55,8 @@ I=scripts/install.sh
 mut "WATCHED 少一個檔名"        "$H" "s.replace('\"AGENTS.md\", ', '')"
 mut "拿掉迴圈防護"              "$H" "s.replace('if stamp.exists():', 'if False:')"
 mut "缺 session 退回固定 key"    "$H" "s.replace('if isinstance(session, str) and session:', 'session = session or \\'nosession\\'\\n    if True:')"
+mut "路徑不取絕對值"        "$H" "s.replace('os.path.abspath(path)', 'path')"
+mut "stamp I/O 不包 try"     "$H" "s.replace('        try:\n            if stamp.exists():\n                return 0\n            stamp.parent.mkdir(parents=True, exist_ok=True)\n            stamp.touch()\n        except OSError:\n            pass\n', '        if stamp.exists():\n            return 0\n        stamp.parent.mkdir(parents=True, exist_ok=True)\n        stamp.touch()\n')"
 mut "拿掉 tool_input 型別檢查"   "$H" "s.replace('if not isinstance(tool_input, dict):', 'if False:')"
 mut "改成比對完整路徑"          "$H" "s.replace('name = os.path.basename(path)', 'name = path')"
 mut "hookEventName 打錯"       "$H" "s.replace('\"hookEventName\": \"PostToolUse\"', '\"hookEventName\": \"Zz\"')"

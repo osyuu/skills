@@ -55,10 +55,15 @@ def main() -> int:
     if isinstance(session, str) and session:
         key = hashlib.sha256(f"{session}:{os.path.abspath(path)}".encode()).hexdigest()[:16]
         stamp = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "claude-md-hygiene" / key
-        if stamp.exists():
-            return 0
-        stamp.parent.mkdir(parents=True, exist_ok=True)
-        stamp.touch()
+        # stamp 寫不進去（TMPDIR 唯讀、磁碟滿）時退化成每次都開火。這裡讓例外逃出去
+        # 會讓整個 PostToolUse 失敗，而它守的只是「同一個 session 別重複吵」。
+        try:
+            if stamp.exists():
+                return 0
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.touch()
+        except OSError:
+            pass
 
     json.dump(
         {

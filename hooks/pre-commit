@@ -10,3 +10,19 @@ sh "$(dirname "$0")/comment-budget-check.sh" || true
 # >>> marketplace-sync >>>
 (sh "$(dirname "$0")/marketplace-sync.sh") || true
 # <<< marketplace-sync <<<
+
+# >>> sync-check >>>
+sh "$(dirname "$0")/sync-check.sh" || true
+# <<< sync-check <<<
+
+# >>> hooks-self-test >>>
+# hooks/ 底下的東西本來完全在閘門外：改壞它不會有任何人發現，包括它自己。
+if git diff --cached --name-only | grep -qE '^(hooks/|\.claude/hooks/)'; then
+    if _o=$(sh "$(dirname "$0")/tests.sh" 2>&1); then
+        printf '\033[32m✓ hooks-self-test：%s\033[0m\n' "$(printf '%s' "$_o" | tail -1)"
+    else
+        printf '\033[33m⚠  hooks-self-test：守門自己的測試沒過\033[0m\n'
+        printf '%s\n' "$_o" | grep -E 'FAIL' | head -5 | sed 's/^/    /'
+    fi
+fi
+# <<< hooks-self-test <<<

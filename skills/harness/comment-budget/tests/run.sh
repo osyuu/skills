@@ -190,6 +190,15 @@ left=$(sed '/# >>> outer >>>/,/# <<< outer <<</d' hooks/pre-commit)
 ok "巢狀 marker 收在最外層才算結束" "comment-budget-check.sh" "$left"
 cd "$SANDBOX" || exit 1
 
+D=$(newrepo); enter "$D"; mkdir -p hooks
+# 全是註解 + 檔尾無換行：awk 找不到可執行行而走 fallback，wc -l 會少算一行。
+printf '#!/bin/sh\n# >>> other >>>\n# only comments\n# <<< other <<<' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
+ok "檔尾無換行也不會插進鄰居體內" "comment-budget-check.sh" "$left"
+cd "$SANDBOX" || exit 1
+
 echo "── worktree 不得關掉主 repo 的守門 ──"
 # core.hooksPath 寫的是**共用** config。主 checkout 沒有 hooks/ 時設下去，
 # 等於把它的所有 hook 關掉——裝一道守門的副作用是關掉別處的全部。

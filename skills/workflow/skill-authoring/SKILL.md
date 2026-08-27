@@ -126,5 +126,7 @@ skill 附的腳本最容易「寫完看起來對就出貨」。兩個只有**執
 - 這個 skill 值得這麼多內容嗎,還是為填版而灌水?
 - 進階手法(分診/severity/ID/腳本)是這個 skill 真的需要,還是 over-engineer?
 - marketplace.json 加了嗎?version bump 了嗎?本機同名去重了嗎?
+- `tests/` 下**只放測試腳本**:那個目錄裡的 `*.sh` 會被 pre-commit 無條件執行,輔助腳本放別處。
+- 測試腳本**不要讀 stdin**:閘門用 pipe 餵 skill 清單,被測腳本讀一次就會把其餘 skill 吃光,而輸出跟「只有這一個 skill 有改動」同形。
 - 有 bundled script 的話,`tests/mutants.sh` 有新增對應的注入嗎?**別靠自己記得**——這條規則寫在這裡也擋不住,本 repo 連犯三次「改了行為沒補測試」,每次都是綠燈。改用跑的:`sh tests/mutants.sh`,每條注入都必須讓 `run.sh` 變紅,pre-commit 也會在你動到該 skill 時自己跑一次。
 - skill 裡叫使用者跑的驗證步驟,**在守門瞎掉時會失敗嗎**?(輸出兩種情況相同 = 那步驟是裝飾)

@@ -221,6 +221,25 @@ left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
 ok2 "縮排的 marker 也認得（不被鄰居吞掉）" "arch-guard-check.sh" "$left"
 
 D=$(newrepo2); cd "$D" || exit 1
+mkdir -p hooks
+# inner 區塊裡刻意不放可執行行：放了的話 awk 在遇到任何 <<< 之前就 print 並 exit，
+# 收合邏輯走不到，這條斷言會變成在測空氣。
+printf '#!/bin/sh\n# >>> outer >>>\n# >>> inner >>>\n# <<< inner <<<\necho OUTER\n# <<< outer <<<\necho REAL\n' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$INSTALL" >/dev/null 2>&1
+left=$(sed '/# >>> outer >>>/,/# <<< outer <<</d' hooks/pre-commit)
+ok2 "巢狀 marker 收在最外層才算結束" "arch-guard-check.sh" "$left"
+
+D=$(newrepo2); cd "$D" || exit 1
+mkdir -p hooks
+# 全是註解 + 檔尾無換行：awk 找不到可執行行而走 fallback，wc -l 會少算一行。
+printf '#!/bin/sh\n# >>> other >>>\n# only comments\n# <<< other <<<' > hooks/pre-commit
+chmod +x hooks/pre-commit
+sh "$INSTALL" >/dev/null 2>&1
+left=$(sed '/# >>> other >>>/,/# <<< other <<</d' hooks/pre-commit)
+ok2 "檔尾無換行也不會插進鄰居體內" "arch-guard-check.sh" "$left"
+
+D=$(newrepo2); cd "$D" || exit 1
 mkdir -p .husky; git config core.hooksPath .husky
 sh "$INSTALL" >/dev/null 2>&1
 ok2 "既有 hooksPath 不被覆寫" ".husky" "$(git config --get core.hooksPath)"

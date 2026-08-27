@@ -55,7 +55,10 @@ if [ -f hooks/pre-commit ]; then
         /^[[:space:]]*(#|$)/ { next }
         { print (bs ? bs : NR); exit }
     ' hooks/pre-commit)
-    [ -n "$LINE" ] || LINE=$(( $(wc -l < hooks/pre-commit) + 1 ))
+    # wc -l 數的是換行數：檔尾沒有換行時少算一行，插入點會落在最後一行**之前**——
+    # 那行若是別人的 <<< 收尾，我們的區塊就被包進對方體內，對方解除安裝時一起消失。
+    # awk 的 NR 不受檔尾換行影響。
+    [ -n "$LINE" ] || LINE=$(( $(awk 'END{print NR}' hooks/pre-commit) + 1 ))
     { head -n $((LINE - 1)) hooks/pre-commit
       printf '%s\n\n' "$BLOCK"
       tail -n +"$LINE" hooks/pre-commit

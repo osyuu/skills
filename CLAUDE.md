@@ -10,10 +10,14 @@ skill 依用途分成 `skills/harness/`(裝守門)、`skills/workflow/`(做事�
 | 檢查 | 守什麼 |
 |---|---|
 | comment-budget | 註解區塊 ≥10 行 · 單檔佔比 >40% · 敘事與驗證過程字眼 |
-| skill-tests | 改了某 skill 的 `scripts/` 或 `assets/` 就跑它的 `tests/run.sh` |
+| skill-tests | 改了某 skill 的 `scripts/` `assets/` `tests/` 就跑它 `tests/` 下的每一支腳本，再跑 `mutants.sh` |
 | marketplace-sync | 新增 `skills/<category>/<name>/` 但 `marketplace.json` 沒登錄 |
+| sync-check | `.claude/hooks/` 與 `hooks/` 的部署副本跟 skill `assets/` 的來源不一致 |
+| hooks-self-test | 動到 `hooks/` 或 `.claude/hooks/` 就跑 `hooks/tests.sh`（守門自己的回歸測試） |
 
 **fresh clone / 新 worktree 要先跑 `git config core.hooksPath hooks`** —— 此設定不進版控，沒設就是全部靜默失效，而那看起來跟有守門一模一樣。
+
+**守門自己也要有守門**：`hooks/` 底下的東西不在 skill-tests 的範圍內，改壞了不會有任何人發現（包括它自己）——所以有 `hooks/tests.sh`，而動到 `hooks/` 就會跑它。
 
 常駐規範檔的複查走 `.claude/settings.json` 的 PostToolUse hook，不在這張表裡——它在**編輯當下**開火，不等到 commit。
 

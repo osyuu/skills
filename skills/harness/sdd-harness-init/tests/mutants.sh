@@ -56,6 +56,8 @@ p.write_text(n)" >/dev/null 2>&1
 
 echo "── ${NAME} 的突變 ──"
 I=scripts/install.sh
+mut "不建 DECISIONS.md"    "$I" "s.replace('cp \"\$ASSETS/DECISIONS.template.md\" \"\$LOG_PATH\"', ': \"\$ASSETS/DECISIONS.template.md\"')"
+mut "覆蓋既有 DECISIONS.md" "$I" "s.replace('if [ -f \"\$LOG_PATH\" ]; then', 'if false; then')"
 mut "拿掉 worktree 保護" "$I" "s.replace('elif [ \"\$(git rev-parse --git-dir)\" != \"\$(git rev-parse --git-common-dir)\" ] &&', 'elif false && [ \"\$(git rev-parse --git-dir)\" != \"\$(git rev-parse --git-common-dir)\" ] &&')"
 
 

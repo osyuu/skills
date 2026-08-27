@@ -60,6 +60,7 @@ mut "拿掉 marker 感知"    "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/ {
 mut "marker 錨死在第 0 欄"  "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/', '/^#[[:space:]]*>>>/').replace('/^[[:space:]]*#[[:space:]]*<<</', '/^#[[:space:]]*<<</')"
 mut "巢狀不計深度"        "$I" "s.replace('{ if (d > 0) d--; if (d == 0) bs = 0; next }', '{ bs = 0; next }')"
 mut "拿掉 worktree 保護"  "$I" "s.replace('elif [ \"\$(git rev-parse --git-dir)\" != \"\$(git rev-parse --git-common-dir)\" ] &&', 'elif false &&')"
+mut "檔尾換行算錯"        "$I" "s.replace('\$(awk \'END{print NR}\' hooks/pre-commit)', '\$(wc -l < hooks/pre-commit)')"
 mut "無條件覆寫 hooksPath" "$I" "s.replace('if [ -n \"\$EXISTING_HP\" ] && [ \"\$EXISTING_HP\" != \"hooks\" ]; then', 'if false; then')"
 
 echo

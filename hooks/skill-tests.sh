@@ -18,7 +18,7 @@ printf '%s\n' "$changed" | sed -E 's#/(scripts|assets|tests)/.*$##' | sort -u | 
         printf '\033[33m⚠  skill-tests：%s 的 scripts/assets 有改動，但沒有 tests/run.sh\033[0m\n' "$s"
         continue
     fi
-    if out=$(sh "$t" 2>&1); then
+    if out=$(sh "$t" </dev/null 2>&1); then
         # 三種摘要格式都要認得,認不出來要講出來——空白的摘要跟「0 個測試」
         # 在畫面上長得一樣。
         sum=$(printf '%s' "$out" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+|通過 [0-9]+，失敗 [0-9]+|[0-9]+ passed, [0-9]+ failed' | tail -1)
@@ -32,12 +32,16 @@ printf '%s\n' "$changed" | sed -E 's#/(scripts|assets|tests)/.*$##' | sort -u | 
     # tests/ 下的其他 *.sh 也要跑。只認 run.sh 的閘門會讓新增的測試檔靜默不跑，
     # 而「沒有輸出」跟「全過」在畫面上同形。踩過：spec-claim.sh 的 32 條斷言
     # 從加進來那天起就沒有任何閘門在跑。
+    # 每支都 </dev/null：迴圈體的 stdin 就是上面那條 pipe，被測腳本只要讀一次
+    # stdin（cat、read、互動提示）就會把**其餘 skill 的清單**吃光，而輸出跟
+    # 「只有這一個 skill 有改動」完全同形。
     for x in "$d"/tests/*.sh; do
         [ -f "$x" ] || continue
         case "${x##*/}" in run.sh|mutants.sh) continue ;; esac
-        if xout=$(sh "$x" 2>&1); then
-            printf '\033[32m✓ skill-tests：%s/%s %s\033[0m\n' "$s" "${x##*/}" \
-                "$(printf '%s' "$xout" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+|通過 [0-9]+，失敗 [0-9]+|[0-9]+ passed, [0-9]+ failed' | tail -1)"
+        if xout=$(sh "$x" </dev/null 2>&1); then
+            xsum=$(printf '%s' "$xout" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+|通過 [0-9]+，失敗 [0-9]+|[0-9]+ passed, [0-9]+ failed' | tail -1)
+            [ -n "$xsum" ] || xsum="(認不出摘要行)"
+            printf '\033[32m✓ skill-tests：%s/%s %s\033[0m\n' "$s" "${x##*/}" "$xsum"
         else
             printf '\033[33m⚠  skill-tests：%s/%s 沒過\033[0m\n' "$s" "${x##*/}"
             printf '%s\n' "$xout" | grep -E '✗|FAIL' | head -3 | sed 's/^/    /'
@@ -47,7 +51,7 @@ printf '%s\n' "$changed" | sed -E 's#/(scripts|assets|tests)/.*$##' | sort -u | 
     # 測試，輸出跟真的守住一模一樣——這個疏漏在本 repo 連犯三次，所以改用跑的。
     m="$d/tests/mutants.sh"
     [ -f "$m" ] || { printf '\033[33m⚠  skill-tests：%s 沒有 tests/mutants.sh，無法確認新 code 有守護者\033[0m\n' "$s"; continue; }
-    if mout=$(sh "$m" 2>&1); then
+    if mout=$(sh "$m" </dev/null 2>&1); then
         printf '\033[32m✓ mutants：%s %s\033[0m\n' "$s" "$(printf '%s' "$mout" | tail -1)"
     else
         printf '\033[33m⚠  mutants：%s 有注入沒讓測試變紅\033[0m\n' "$s"

@@ -53,6 +53,9 @@ echo "── ${NAME} 的突變 ──"
 I=scripts/install.sh
 mut "改回 [ -d .git ]"     "$I" "s.replace('git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||', '[ -d .git ] ||')"
 mut "拿掉 marker 感知"     "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/ { d++; if (d == 1) bs = NR; next }', '')"
+mut "巢狀不計深度"        "$I" "s.replace('{ if (d > 0) d--; if (d == 0) bs = 0; next }', '{ bs = 0; next }')"
+mut "marker 錨死在第 0 欄"  "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/', '/^#[[:space:]]*>>>/').replace('/^[[:space:]]*#[[:space:]]*<<</', '/^#[[:space:]]*<<</')"
+mut "檔尾換行算錯"        "$I" "s.replace('\$(awk \'END{print NR}\' hooks/pre-commit)', '\$(wc -l < hooks/pre-commit)')"
 mut "無條件覆寫 hooksPath"  "$I" "s.replace('if [ -n \"\$EXISTING_HP\" ] && [ \"\$EXISTING_HP\" != \"hooks\" ]; then', 'if false; then')"
 mut "拿掉 worktree 保護"    "$I" "s.replace('elif [ \"\$GITDIR\" != \"\$COMMON\" ] && [ ! -d', 'elif false && [ ! -d')"
 

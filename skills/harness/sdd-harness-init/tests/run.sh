@@ -41,9 +41,16 @@ strip() { sed 's/\033\[[0-9;]*m//g'; }
 echo "── 安裝 ──"
 D=$(newrepo); enter "$D"
 out=$(sh "$SKILL/scripts/install.sh" 2>&1 | strip)
-ok "建出 DECISIONS.md" "DECISIONS.md" "$out"
+# 比對檔案本身，不是輸出文字：`say "[1/5] $LOG_PATH"` 不管有沒有真的建檔都會印出
+# 「DECISIONS.md」，連「✓ 由模板建立」都照印。斷言比對輸出時，拿掉 cp 仍然全綠。
+ok "建出 DECISIONS.md" "yes" "$([ -f docs/design/DECISIONS.md ] && echo yes || echo no)"
+printf 'MINE\n' >> docs/design/DECISIONS.md
+before=$(md5 -q docs/design/DECISIONS.md 2>/dev/null || md5sum docs/design/DECISIONS.md | cut -d' ' -f1)
 out=$(sh "$SKILL/scripts/install.sh" 2>&1 | strip)
-no "重跑不覆蓋既有檔" "已覆蓋" "$out"
+after=$(md5 -q docs/design/DECISIONS.md 2>/dev/null || md5sum docs/design/DECISIONS.md | cut -d' ' -f1)
+# 比對的必須是檔案內容：輸出文字分不出「沒有覆蓋」與「沒有這則訊息」，
+# 而不存在的字串配上 no() 是結構上不可證偽的斷言。
+ok "重跑不覆蓋既有檔" "$before" "$after"
 cd "$SANDBOX" || exit 1
 
 D=$(newrepo); enter "$D"; git worktree add -q wt HEAD 2>/dev/null

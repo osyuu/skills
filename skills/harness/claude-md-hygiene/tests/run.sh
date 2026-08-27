@@ -59,6 +59,18 @@ ok "換 session 仍注入"       'additionalContext' "$(fire s2 /r/CLAUDE.md)"
 nosess() { printf '{"tool_input":{"file_path":"/r/CLAUDE.md"}}' | python3 "$HOOK" 2>&1; }
 ok "缺 session_id 第一次仍注入"  'additionalContext' "$(nosess)"
 ok "缺 session_id 不會就此靜音"  'additionalContext' "$(nosess)"
+# 相對與絕對寫法指同一個檔：不取絕對值的話，同一次編輯會被算成兩個 key 而開火兩次。
+# pwd -P：$SANDBOX 在 macOS 是 /var/... 的 symlink，而 python 的 getcwd 回 /private/var/...。
+# 用 logical 路徑會讓這條斷言測到「symlink 不解」而不是它要測的「相對 vs 絕對」。
+PHYS=$(pwd -P)
+fresh; ok "絕對路徑先開火"      'additionalContext' "$(fire s9 "$PHYS/CLAUDE.md")"
+no "同 session 相對路徑不重複注入" 'additionalContext' "$(fire s9 CLAUDE.md)"
+# stamp 寫不進去時 hook 不得炸掉——它守的只是「別重複吵」，不值得讓整個 PostToolUse 失敗。
+RO="$SANDBOX/ro"; mkdir -p "$RO"; chmod 500 "$RO"
+ro_out=$(TMPDIR="$RO" sh -c "printf '{\"session_id\":\"sro\",\"tool_input\":{\"file_path\":\"/r/CLAUDE.md\"}}' | python3 '$HOOK'" 2>&1)
+ok "TMPDIR 唯讀時仍注入且不炸"  'additionalContext' "$ro_out"
+no "TMPDIR 唯讀時沒有 traceback" 'Traceback'         "$ro_out"
+chmod 700 "$RO"
 
 echo "── 壞輸入不得讓 hook 爆掉 ──"
 # hook 失敗會干擾工具流程，所以任何形狀的輸入都必須 exit 0。
