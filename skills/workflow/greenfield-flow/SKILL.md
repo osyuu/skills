@@ -1,17 +1,18 @@
 ---
 name: greenfield-flow
 description: >-
-  0→1 專案的開發流程順序——什麼時候收斂需求、什麼時候打地基、**什麼時候還不要裝守門**、
-  什麼時候才輪到 review 與出貨。當使用者說「新專案怎麼開始 / 開新 repo / 從零開始 /
-  greenfield / 這個專案要怎麼跑流程 / 我的開發流程怎麼搬進來 / 第一步該做什麼 /
-  專案初始化 / bootstrap 一個新專案 / 要照什麼順序做 / new project workflow /
-  where do I start」，或你正要在一個幾乎空的 repo 裡安排工作順序時，主動使用。
-  這是**排程表**（誰在什麼時機進場），不是安裝器也不是內容生成器——各階段的實作交給
-  它指向的 skill。已經有大量 code、只是要補守門的既有專案改用 harness-audit；
-  純粹「需求→設計書」用 design-doc；純寫應用 code 不要用。
+  0→1 專案的進場順序——什麼時候收斂需求、什麼時候打地基、**什麼時候還不要裝守門**、
+  什麼時候才輪到 review 與出貨。這是**排程表**(誰在什麼時機進場),不是安裝器也不是
+  內容生成器;各階段的實作交給它指向的 skill。既有專案要補守門用 harness-audit,
+  純粹「需求→設計書」用 design-doc。
+disable-model-invocation: true
 ---
 
 # greenfield-flow — 0→1 的進場順序
+
+> **刻意退出 skill 清單。** 它的內容是「先做 A 再做 B」的順序,不是某個請求的解法——
+> 模型自動觸發它,只會在別的 skill 該進場時搶著講流程。使用者仍打得到
+> `/greenfield-flow`;`user-invocable: false` 才是連使用者也叫不到。
 
 ## 這在解什麼問題
 

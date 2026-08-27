@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.13.0"
+    "version": "1.14.0"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/design-doc"
+        "./skills/workflow/design-doc"
       ]
     },
     {
@@ -24,7 +24,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/skill-authoring"
+        "./skills/workflow/skill-authoring"
       ]
     },
     {
@@ -33,7 +33,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/flutter-dart-code-review"
+        "./skills/review/flutter-dart-code-review"
       ]
     },
     {
@@ -42,7 +42,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/claude-md-hygiene"
+        "./skills/harness/claude-md-hygiene"
       ]
     },
     {
@@ -51,7 +51,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/sdd-harness-init"
+        "./skills/harness/sdd-harness-init"
       ]
     },
     {
@@ -60,7 +60,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/claim-check"
+        "./skills/harness/claim-check"
       ]
     },
     {
@@ -69,7 +69,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/handoff"
+        "./skills/workflow/handoff"
       ]
     },
     {
@@ -78,7 +78,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/arch-guard"
+        "./skills/harness/arch-guard"
       ]
     },
     {
@@ -87,7 +87,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/teammate"
+        "./skills/workflow/teammate"
       ]
     },
     {
@@ -96,7 +96,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/release-assets"
+        "./skills/workflow/release-assets"
       ]
     },
     {
@@ -105,7 +105,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/comment-budget"
+        "./skills/harness/comment-budget"
       ]
     },
     {
@@ -114,7 +114,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/harness-audit"
+        "./skills/harness/harness-audit"
       ]
     },
     {
@@ -123,7 +123,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/greenfield-flow"
+        "./skills/workflow/greenfield-flow"
       ]
     }
   ]

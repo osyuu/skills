@@ -1,6 +1,9 @@
 # skills
 
-Osyuu 的個人 Claude Code skill marketplace。撰寫與登錄的房規見 `skills/skill-authoring/SKILL.md`。
+Osyuu 的個人 Claude Code skill marketplace。撰寫與登錄的房規見 `skills/workflow/skill-authoring/SKILL.md`。
+
+skill 依用途分成 `skills/harness/`(裝守門)、`skills/workflow/`(做事順序)、
+`skills/review/`(審 code),各目錄的 `README.md` 寫了判準。否決過的路存在 `.out-of-scope/`。
 
 ## 守門（`hooks/pre-commit`，全部 warn-only）
 
@@ -8,7 +11,7 @@ Osyuu 的個人 Claude Code skill marketplace。撰寫與登錄的房規見 `ski
 |---|---|
 | comment-budget | 註解區塊 ≥10 行 · 單檔佔比 >40% · 敘事與驗證過程字眼 |
 | skill-tests | 改了某 skill 的 `scripts/` 或 `assets/` 就跑它的 `tests/run.sh` |
-| marketplace-sync | 新增 `skills/<name>/` 但 `marketplace.json` 沒登錄 |
+| marketplace-sync | 新增 `skills/<category>/<name>/` 但 `marketplace.json` 沒登錄 |
 
 **fresh clone / 新 worktree 要先跑 `git config core.hooksPath hooks`** —— 此設定不進版控，沒設就是全部靜默失效，而那看起來跟有守門一模一樣。
 

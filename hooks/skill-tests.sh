@@ -6,17 +6,24 @@
 # warn-only。
 set -u
 # tests/ 也算：改壞測試檔跟改壞被測的 code 一樣看不出來。
-changed=$(git diff --cached --name-only | grep -E '^skills/[^/]+/(scripts|assets|tests)/' || true)
+# 分類目錄（skills/<cat>/<name>/）與扁平（skills/<name>/）都要吃：房規只是慣例，
+# 而漏抓的症狀是「沒有發現」，跟真的沒問題長得一樣。
+changed=$(git diff --cached --name-only | grep -E '^skills/([^/]+/)?[^/]+/(scripts|assets|tests)/' || true)
 [ -n "$changed" ] || exit 0
 
-printf '%s\n' "$changed" | sed -E 's|^skills/([^/]+)/.*|\1|' | sort -u | while read -r s; do
-    t="skills/$s/tests/run.sh"
+printf '%s\n' "$changed" | sed -E 's#/(scripts|assets|tests)/.*$##' | sort -u | while read -r d; do
+    s="${d##*/}"
+    t="$d/tests/run.sh"
     if [ ! -f "$t" ]; then
         printf '\033[33m⚠  skill-tests：%s 的 scripts/assets 有改動，但沒有 tests/run.sh\033[0m\n' "$s"
         continue
     fi
     if out=$(sh "$t" 2>&1); then
-        printf '\033[32m✓ skill-tests：%s %s\033[0m\n' "$s" "$(printf '%s' "$out" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+' | tail -1)"
+        # 三種摘要格式都要認得,認不出來要講出來——空白的摘要跟「0 個測試」
+        # 在畫面上長得一樣。
+        sum=$(printf '%s' "$out" | grep -oE 'PASS [0-9]+ · FAIL [0-9]+|通過 [0-9]+，失敗 [0-9]+|[0-9]+ passed, [0-9]+ failed' | tail -1)
+        [ -n "$sum" ] || sum="(認不出摘要行)"
+        printf '\033[32m✓ skill-tests：%s %s\033[0m\n' "$s" "$sum"
     else
         printf '\033[33m⚠  skill-tests：%s 的測試沒過\033[0m\n' "$s"
         printf '%s\n' "$out" | grep -E '✗|FAIL' | head -5 | sed 's/^/    /'
@@ -24,7 +31,7 @@ printf '%s\n' "$changed" | sed -E 's|^skills/([^/]+)/.*|\1|' | sort -u | while r
     fi
     # 綠燈只說「現有斷言沒被違反」，說不了「這段新 code 有人守」。改了行為卻沒補
     # 測試，輸出跟真的守住一模一樣——這個疏漏在本 repo 連犯三次，所以改用跑的。
-    m="skills/$s/tests/mutants.sh"
+    m="$d/tests/mutants.sh"
     [ -f "$m" ] || { printf '\033[33m⚠  skill-tests：%s 沒有 tests/mutants.sh，無法確認新 code 有守護者\033[0m\n' "$s"; continue; }
     if mout=$(sh "$m" 2>&1); then
         printf '\033[32m✓ mutants：%s %s\033[0m\n' "$s" "$(printf '%s' "$mout" | tail -1)"

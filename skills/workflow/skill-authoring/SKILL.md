@@ -70,8 +70,8 @@ description 決定「會不會被觸發」,勝過 body 裡任何內容。**怎�
 
 ## 登錄到本 marketplace(寫完別漏這步,漏了等於沒發佈)
 
-1. skill 目錄放 `skills/<skill-name>/`,至少含 `SKILL.md`;附屬檔進各自的 `references/`、`assets/`、`scripts/`。
-2. 在 `.claude-plugin/marketplace.json` 的 `plugins[]` **加一筆**:`{ "name": "<skill-name>", "source": "./", "skills": ["./skills/<skill-name>"] }`。獨立一個 plugin = 可被選擇性安裝。
+1. skill 目錄放 `skills/<category>/<skill-name>/`,至少含 `SKILL.md`;附屬檔進各自的 `references/`、`assets/`、`scripts/`。分類三選一:**`harness/`** 留下會自己開火的機制(pre-commit / hook),**`workflow/`** 叫用當下做完就結束,**`review/`** 拿檢查表審既有 code;判準寫在各目錄的 `README.md`。
+2. 在 `.claude-plugin/marketplace.json` 的 `plugins[]` **加一筆**:`{ "name": "<skill-name>", "source": "./", "skills": ["./skills/<category>/<skill-name>"] }`。獨立一個 plugin = 可被選擇性安裝。**plugin 名不含分類前綴**——分類只在路徑上,`skillUsage` 的 key 來自 frontmatter 的 `name`,搬目錄不會重置分數。
 3. **push 到 main 就會傳播**:marketplace 註冊時預設 `autoUpdate: true`,各機**下次啟動時自動拉最新 commit**(github-source 追的是 git HEAD,不是 `metadata.version`)。所以主流程是「改 → commit → push」,不必手動叫別台更新。`metadata.version` 照樣 bump,但它是**人類可讀的變更標記,不是觸發條件**;要當下就生效(不等重啟)才手動 `/plugin update`。
 4. ⚠️ **改動只對「新 session」生效,已經在跑的 session 拿不到。** skill 全文是在**被叫用的那一刻**抓進對話的,之後不會換——所以一個開很久的 session 會一路照著當初那份工作,而你以為它看得到你剛 push 的版本。**兩邊都沒有任何訊號。** 實測踩過:一個 7/24 開的 session,到 8/22 仍在照 8/5 的版本做事,期間 plugin 已經更新兩次;那幾天新加的規則(SDD 完整性掃描、「review 不能自己審」、mutation 表)對它從頭到尾不存在。
    - 改完 skill 想立刻用 → **開新 session**(最乾淨),或在原 session **重新叫一次那個 skill** 把當下的版本拉進來。
