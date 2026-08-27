@@ -83,6 +83,14 @@ printf '#!/bin/sh\ncat >/dev/null\necho "1 passed, 0 failed"\n' > "$D/skills/har
 out=$(cd "$D" && sh "$HOOKS/skill-tests.sh" 2>&1 | strip)
 ok "吃 stdin 的 run.sh 不會吞掉別的 skill" "eee 1 passed" "$out"
 
+D=$(newrepo)
+for n in fff ggg; do mkskill "$D" "skills/harness/$n" '#!/bin/sh
+echo "1 passed, 0 failed"'; done
+printf '#!/bin/sh\ncat >/dev/null\necho "1 條注入轉紅，0 條沒有"\n' > "$D/skills/harness/fff/tests/mutants.sh"
+( cd "$D" && git add -A ) >/dev/null 2>&1
+out=$(cd "$D" && sh "$HOOKS/skill-tests.sh" 2>&1 | strip)
+ok "吃 stdin 的 mutants.sh 不會吞掉別的 skill" "ggg 1 passed" "$out"
+
 echo "── marketplace-sync ──"
 D=$(newrepo); mkdir -p "$D/.claude-plugin" "$D/skills/harness/newone"
 printf '{"plugins":[]}\n' > "$D/.claude-plugin/marketplace.json"
@@ -109,7 +117,10 @@ mkdir -p "$D/hooks"; cp "$HOOKS/comment-budget-check.sh" "$HOOKS/comment-budget.
 { printf '#!/bin/sh\n'; i=1; while [ $i -le 14 ]; do printf '# 註解第 %s 行\n' "$i"; i=$((i+1)); done; printf 'echo hi\n'; } > "$D/probe.sh"
 ( cd "$D" && git add probe.sh ) >/dev/null 2>&1
 out=$(cd "$D" && sh hooks/comment-budget-check.sh 2>&1 | strip)
-ok "過長註解區塊要出聲" "probe.sh" "$out"
+# 比對各自獨有的那句，不是檔名：這個 fixture 同時踩到兩個檢查，比對 probe.sh
+# 的話殺掉任何一個檢查都還是綠的。
+ok "過長註解區塊要出聲" "單一註解區塊" "$out"
+ok "註解佔比過高要出聲" "% 是註解"     "$out"
 
 D=$(newrepo); mkdir -p "$D/hooks"; cp "$HOOKS/comment-budget-check.sh" "$HOOKS/comment-budget.conf" "$D/hooks/" 2>/dev/null || true
 printf '#!/bin/sh\n# 一行註解\necho hi\n' > "$D/probe.sh"
@@ -129,6 +140,22 @@ no "兩份一致時靜默" "sync-check" "$out"
 printf 'drifted\n' > "$D/.claude/hooks/claude-md-hygiene-hook.py"
 out=$(SYNC_CHECK_ROOT="$D" sh "$HOOKS/sync-check.sh" 2>&1 | strip)
 ok "來源與部署副本不一致要出聲" "不一致" "$out"
+rm -f "$D/.claude/hooks/claude-md-hygiene-hook.py"
+out=$(SYNC_CHECK_ROOT="$D" sh "$HOOKS/sync-check.sh" 2>&1 | strip)
+ok "部署副本不存在要出聲（不是當成一致）" "無法比對" "$out"
+
+# PAIRS 自己沒人守:新增第三份部署副本卻忘了登記,漂移就再也沒人看。
+D=$(newrepo)
+mkdir -p "$D/.claude/hooks" "$D/skills/harness/claude-md-hygiene/assets" "$D/hooks" "$D/skills/harness/comment-budget/assets"
+printf 'same\n' > "$D/.claude/hooks/claude-md-hygiene-hook.py"
+printf 'same\n' > "$D/skills/harness/claude-md-hygiene/assets/claude-md-hygiene-hook.py"
+printf 'same\n' > "$D/hooks/comment-budget-check.sh"
+printf 'same\n' > "$D/skills/harness/comment-budget/assets/comment-budget-check.sh"
+mkdir -p "$D/skills/harness/newguard/assets"
+printf 'x\n' > "$D/hooks/newguard-check.sh"
+printf 'x\n' > "$D/skills/harness/newguard/assets/newguard-check.sh"
+out=$(SYNC_CHECK_ROOT="$D" sh "$HOOKS/sync-check.sh" 2>&1 | strip)
+ok "沒登記進 PAIRS 的部署副本要出聲" "不在 PAIRS 裡" "$out"
 
 echo
 echo "通過 ${pass}，失敗 ${fail}"

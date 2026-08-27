@@ -4,7 +4,7 @@
 # 手動 cp 到部署位置**。兩份不同時跑的是部署那份，而測試量的是來源那份，兩邊都綠。
 # warn-only。
 set -u
-[ -n "${SYNC_CHECK_ROOT:-}" ] && cd "$SYNC_CHECK_ROOT"
+[ -n "${SYNC_CHECK_ROOT:-}" ] && { cd "$SYNC_CHECK_ROOT" || exit 2; }
 
 # <部署路徑>|<來源路徑>。門檻檔（*.conf）刻意不列：那是每個 repo 各自調的。
 PAIRS='.claude/hooks/claude-md-hygiene-hook.py|skills/harness/claude-md-hygiene/assets/claude-md-hygiene-hook.py
@@ -21,5 +21,18 @@ printf '%s\n' "$PAIRS" | while IFS='|' read -r live src; do
         printf '   跑的是部署副本，改的是來源——兩者不同時所有測試仍會全綠。\n'
         printf '   cp %s %s\n' "$src" "$live"
     }
+done
+
+# PAIRS 是手維護的,而這支守的正是「登錄與現實不同步」。反查一遍:部署位置底下
+# 每支腳本,若在某個 skill 的 assets/ 有同名來源卻不在 PAIRS 裡,那份漂移沒人看。
+for live in hooks/*.sh .claude/hooks/*; do
+    [ -f "$live" ] || continue
+    for src in skills/*/*/assets/"${live##*/}"; do
+        [ -f "$src" ] || continue
+        printf '%s\n' "$PAIRS" | grep -qF "$live|" || {
+            printf '\033[33m⚠  sync-check：%s 在 %s 有同名來源，但不在 PAIRS 裡\033[0m\n' "$live" "$src"
+            printf '   這支的漂移目前沒有任何人看著。\n'
+        }
+    done
 done
 exit 0

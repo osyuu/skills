@@ -44,6 +44,7 @@ echo "── hooks 的突變 ──"
 S=skill-tests.sh
 M=marketplace-sync.sh
 Y=sync-check.sh
+C=comment-budget-check.sh
 
 mut "路徑正則掉一層（回到扁平）" "$S" "s.replace('^skills/([^/]+/)?[^/]+/(scripts|assets|tests)/', '^skills/[^/]+/(scripts|assets|tests)/')"
 mut "路徑正則只吃分類"          "$S" "s.replace('^skills/([^/]+/)?[^/]+/(scripts|assets|tests)/', '^skills/[^/]+/[^/]+/(scripts|assets|tests)/')"
@@ -56,6 +57,15 @@ mut "登錄比對用 grep -q"        "$M" "s.replace('grep -qF', 'grep -q')"
 mut "新增偵測掉一層"            "$M" "s.replace('^skills/([^/]+/)?[^/]+/SKILL', '^skills/[^/]+/SKILL')"
 mut "未登錄時不出聲"            "$M" "s.replace('\"\$MF\" || {', '\"\$MF\" && {')"
 mut "同步比對永遠通過"          "$Y" "s.replace('cmp -s \"\$live\" \"\$src\" ||', 'true ||')"
+mut "同步比對無條件出聲"        "$Y" "s.replace('cmp -s \"\$live\" \"\$src\" ||', 'false ||')"
+mut "不存在時當成一致"          "$Y" "s.replace('if [ ! -f \"\$live\" ] || [ ! -f \"\$src\" ]; then', 'if false; then')"
+mut "註解區塊門檻失效"          "$C" "s.replace('[ \"\$MAXRUN\" -ge \"\$BLOCK_MAX\" ]', 'false')"
+mut "註解佔比門檻失效"          "$C" "s.replace('[ \"\$PCT\" -gt \"\$RATIO_MAX\" ]', 'false')"
+mut "註解檢查無條件開火"        "$C" "s.replace('[ \"\$MAXRUN\" -ge \"\$BLOCK_MAX\" ]', 'true')"
+mut "路徑過濾拿掉（對任何檔開火）" "$S" "s.replace(\"grep -E '^skills/([^/]+/)?[^/]+/(scripts|assets|tests)/'\", 'cat')"
+mut "不帶出失敗那幾行"          "$S" "s.replace(\"printf '%s\\\\n' \\\"\$out\\\" | grep -E '✗|FAIL' | head -5 | sed 's/^/    /'\", ':')"
+mut "mutants 不 </dev/null"      "$S" "s.replace('sh \"\$m\" </dev/null', 'sh \"\$m\"')"
+mut "PAIRS 反查拿掉"            "$Y" "s.replace('for live in hooks/*.sh .claude/hooks/*; do', 'for live in ; do')"
 mut "不一致時不出聲"            "$Y" "s.replace('與來源 %s 不一致', '（靜音）')"
 
 echo

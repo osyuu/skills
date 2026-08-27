@@ -23,7 +23,9 @@ cd "$SANDBOX" || exit 1
 pass=0
 fail=0
 
-ok() { case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
+# 空的 needle 會讓 case 的 *""* 比對任何字串都成立,斷言靜默變成恆真。
+ok() { [ -n "$2" ] || { fail=$((fail+1)); printf '  FAIL  %s\n        比對字串是空的（斷言恆真）\n' "$1"; return; }
+  case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
   *) fail=$((fail+1)); printf '  FAIL  %s\n        期望含：%s\n        實得：%s\n' "$1" "$2" "$3" ;; esac; }
 no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
   *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
