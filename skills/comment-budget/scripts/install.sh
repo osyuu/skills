@@ -41,14 +41,10 @@ if [ -f hooks/pre-commit ]; then
   if grep -qF "$MARK" hooks/pre-commit; then
     echo "comment-budget: pre-commit already calls the checker — unchanged"
   else
-    # 不能無腦 append：dispatcher 常以頂層 `exit 0` 收尾，接在它後面的區塊
-    # 永遠不會執行——裝了卻不觸發是最糟的失敗（看起來有守門，其實沒有）。
-    # 有頂層 exit 就插在它之前，沒有才 append。
-    # **插在最前面**（shebang 與檔頭註解之後）。既有的 pre-commit 不歸我們管，
-    # 它可能有中途的 early exit（條件不成立就 `exit 0`）；插在那後面等於平常都不會跑，
-    # 而那看起來跟「有守門」一模一樣。本區塊自己不 exit，所以放最前面不影響別人。
-    # **marker 行也是註解**，無腦跳過註解會插進別人的區塊裡——那時對方用 marker
-    # 範圍解除安裝會把我們一起帶走，而症狀是靜默少一道守門。
+    # 插在最前面（shebang 與檔頭註解之後），不是 append：既有 hook 的中途 exit
+    # 會讓接在後面的區塊永遠不跑。依據見 SKILL.md〈與別人共用同一支 pre-commit〉。
+    # **marker 行也是註解**，無腦跳過會插進別人的區塊裡——對方用 marker 範圍
+    # 解除安裝時會把我們一起帶走，而症狀是靜默少一道守門。
     LINE=$(awk '
         NR == 1 && /^#!/ { next }
         /^#[[:space:]]*>>>/ { if (!bs) bs = NR; next }

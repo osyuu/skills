@@ -2,8 +2,7 @@
 name: harness-audit
 description: >-
   盤點「這個 repo 該裝哪些守門 harness、已經裝了哪些、漏了哪些」，安裝後**強制注入故障驗證每一道真的會開火**。
-  動態掃 plugin cache 取得可用 skill 清單，不維護靜態清單——日後新增任何 harness skill 都會自動出現在盤點裡，
-  不必回頭改這個 skill。當使用者說「開新專案 / 新 repo 要裝什麼 / bootstrap / 該裝哪些守門 / 有沒有漏裝 /
+  動態掃 plugin cache 取得可用 skill 清單，不維護靜態清單。當使用者說「開新專案 / 新 repo 要裝什麼 / bootstrap / 該裝哪些守門 / 有沒有漏裝 /
   盤點 harness / 把守門補齊 / 這個 repo 的檢查夠不夠 / 幫我建開發用的 harness / 我怕忘記要裝哪些 /
   set up guards / project bootstrap / which harness skills / audit my hooks / pre-commit hooks /
   guard rails / verify the hooks actually fire / is my lint even running / what checks does this repo have」，
@@ -36,6 +35,12 @@ sh <skill-dir>/scripts/scan-skills.sh
 兩個環境變數：`CLAUDE_PLUGIN_CACHE` 換掃描路徑（測試用），`HARNESS_AUDIT_DESC_MAX` 截斷描述長度（預設不截；截斷按 byte，中文會被切壞）。
 
 **掃 plugin cache，不掃任何本機 repo**——換一台機器就沒有你的 skill 原始碼，但 cache 一定在。
+
+掃描認 `skills/` 底下**最多再兩層分類目錄**（`skills/<分類>/<name>/` 這種巢狀佈局也收）；SKILL.md 往上 3 層內沒有 `skills/` 目錄就不列。盤點前仍值得對一次總數——差額應該全部解釋得了（幻影過濾、orphaned 舊版）：
+
+```sh
+find -L ~/.claude/plugins/cache -name SKILL.md -type f | wc -l   # 對照腳本輸出的行數
+```
 
 從 description 判斷哪些是守門類（會裝 pre-commit / 檢查 / 靜態分析的），對照 repo 現況：
 

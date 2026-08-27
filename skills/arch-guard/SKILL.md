@@ -49,10 +49,12 @@ sh <skill-dir>/scripts/install.sh
 ```
 sh hooks/arch-guard-check.sh --audit
 ```
-列出所有現存違規 + 總數。乾淨→config 對了；一堆違規→要嘛 config 分錯層、要嘛真有債。真有債就跟使用者確認是「這次清」還是「標記待清」。
+列出所有現存違規 + 總數。**「共 0 條違規」不代表 config 對了**——`PACKAGE`／`ROOT`／`IMPORT_RE` 任一填錯，audit 一樣印 0，跟真的乾淨長得一模一樣（實測過）。所以 0 的時候要**注入一條故障再 audit 一次**：在最底層隨便一個檔加一行 import 上層的敘述，必須被抓到；抓不到就是 config 瞎了，不是 repo 乾淨。驗完把那行刪掉。
+
+一堆違規→要嘛 config 分錯層、要嘛真有債。真有債就跟使用者確認是「這次清」還是「標記待清」。
 
 **4. 把分層節加進 CLAUDE.md**：用 `assets/claude-md-arch-section.md` 當骨架，填成這個 repo 的實際層名/圖/表。理由：hook 抓違規，但「新東西該放哪層」要人/agent 看得到規則才不會一開始就放錯。
-- **避免重複佈線（靠條件、不靠 skill 名）**：模板尾巴那句「fresh clone 要跑 `git config core.hooksPath hooks`」是**共用 hook 佈線**、非分層專屬。grep 這份 CLAUDE.md：**若別處已有同一句 `core.hooksPath` 佈線指示（不論誰寫的）→ 刪掉本節那條、別重複**（重複＝drift 源，會被 claude-md-hygiene 抓）；沒有才保留。**注入的持久內容一律別提任何 skill 名**（否則對沒裝那個 skill 的 repo 就是空指向）——判斷靠「有沒有那句話」，不是「有沒有裝某 skill」。
+- **避免重複佈線（靠條件、不靠 skill 名）**：模板尾巴那句「fresh clone 要跑 `git config core.hooksPath hooks`」是**共用 hook 佈線**、非分層專屬。grep 這份 CLAUDE.md：**若別處已有同一句 `core.hooksPath` 佈線指示（不論誰寫的）→ 刪掉本節那條、別重複**（重複＝drift 源，會被 claude-md-hygiene 抓）；沒有才保留。**注入的持久內容一律別提任何 skill 名**（否則對沒裝那個 skill 的 repo 就是空指向）。
 
 ## checker 行為（`hooks/arch-guard-check.sh`）
 
@@ -64,7 +66,7 @@ sh hooks/arch-guard-check.sh --audit
 
 ## 與其他 pre-commit harness 共存
 
-arch-guard 只管**分層方向**（架構專屬、靠 config 參數化）。若 repo 已有別的 warn-only pre-commit harness（**本 marketplace 的 `sdd-harness-init` 管 decision-log drift 是一例**），兩者一 skill 一職責、疊在同一支 hook：install.sh 偵測到既有 pre-commit 就 **append**（marker-guarded）不覆蓋，`core.hooksPath` 已設就沿用不改。**不預設任何特定 skill 存在**——共存與 dedup 都靠「repo 現況有沒有那個東西」判斷，不靠 skill 名。
+arch-guard 只管**分層方向**（架構專屬、靠 config 參數化）。若 repo 已有別的 warn-only pre-commit harness（**本 marketplace 的 `sdd-harness-init` 管 decision-log drift 是一例**），兩者一 skill 一職責、疊在同一支 hook：install.sh 偵測到既有 pre-commit 就 **append**（marker-guarded）不覆蓋，`core.hooksPath` 已設就沿用不改。**不預設任何特定 skill 存在**——共存、dedup、以及上面第 4 步要不要留那句佈線指示，判準一律是「repo 現況有沒有那個東西」，不是「有沒有裝某 skill」。
 
 ## 限制（誠實說）
 

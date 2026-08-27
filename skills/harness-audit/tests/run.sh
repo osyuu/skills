@@ -51,6 +51,17 @@ cat > "$C/mkt/plugD/v1/.claude-plugin/marketplace.json" <<'MJ'
 {"plugins":[{"name":"plugD","skills":["./skills/one","./skills/two"]}]}
 MJ
 
+# plugE 巢狀分類佈局（mattpocock 的形狀：skills/<分類>/<name>/）
+w "$C/mkt/plugE/v1/skills/engineering/nested1"  "---" "name: nested1" "description: 巢狀甲" "---"
+w "$C/mkt/plugE/v1/skills/productivity/nested2" "---" "name: nested2" "description: 巢狀乙" "---"
+w "$C/mkt/plugE/v1/skills/engineering/nghost"   "---" "name: nghost"  "description: 巢狀幻影" "---"
+mkdir -p "$C/mkt/plugE/v1/.claude-plugin"
+cat > "$C/mkt/plugE/v1/.claude-plugin/marketplace.json" <<'MJ'
+{"plugins":[{"name":"plugE","skills":["./skills/engineering/nested1","./skills/productivity/nested2"]}]}
+MJ
+w "$C/mkt/plugE/v0/skills/engineering/nested1" "---" "name: nested1" "description: 巢狀舊版不該出現" "---"
+touch "$C/mkt/plugE/v0/.orphaned_at"
+
 out=$(CLAUDE_PLUGIN_CACHE="$C" sh "$DIR/scripts/scan-skills.sh" 2>/dev/null)
 g() { printf '%s\n' "$out" | awk -F'\t' -v k="$1" '$1==k{print $2}'; }
 
@@ -72,6 +83,11 @@ check "宣告清單過濾掉幻影"   "$(printf '%s\n' "$out" | grep -c '^plugC:
 check "宣告的 skill 保留"     "$(g plugC:real)" "真的"
 check "一個 plugin 多個 skill" "$(printf '%s\n' "$out" | grep -c '^plugD:')" "2"
 check "無 marketplace.json 的照收" "$(printf '%s\n' "$out" | grep -c '^plugA:')" "6"
+
+check "巢狀分類佈局掃得到"       "$(g plugE:nested1)" "巢狀甲"
+check "巢狀第二個分類也掃得到"   "$(g plugE:nested2)" "巢狀乙"
+check "巢狀佈局的幻影仍被濾掉"   "$(printf '%s\n' "$out" | grep -c ':nghost')" "0"
+check "巢狀 orphaned 版本被濾掉" "$(printf '%s\n' "$out" | grep -c '巢狀舊版不該出現')" "0"
 
 out3=$(CLAUDE_PLUGIN_CACHE="$C//" sh "$DIR/scripts/scan-skills.sh" 2>/dev/null)
 check "多層結尾斜線" "$(printf '%s\n' "$out3" | awk -F'\t' '$1=="plugA:alpha"{print $2}')" "單行描述"

@@ -65,17 +65,10 @@ sh <skill-dir>/scripts/install.sh
 ```
 複製 checker、seed `hooks/comment-budget.conf`（僅當不存在）、marker-guarded 接進 `hooks/pre-commit`、設 `core.hooksPath hooks`。
 
-**2. 先量基準再決定門檻**——這步不要跳過。拿最近 20–30 個 commit 跑一次，看開火率：
+**2. 先量基準再決定門檻**——這步不要跳過。拿最近的 commit 跑一次，看開火率：
 
 ```sh
-git log --format=%h -25 -- '*.<ext>' | while read c; do
-  git diff-tree --no-commit-id --name-only -r "$c" | while read f; do
-    git diff "$c~1" "$c" -- "$f" | grep '^+' | grep -v '^+++' | awk -v F="$f" '
-      { l=substr($0,2); sub(/^[ \t]+/,"",l)
-        if (l ~ /^\/\//) { c2++; run++; if (run>mx) mx=run } else { run=0; if (l!="") k++ } }
-      END { t=c2+k; if (t>=20) printf "%-50s %2d%%  max %d\n", F, c2*100/t, mx }'
-  done
-done
+sh <skill-dir>/scripts/measure-baseline.sh   # 引數 = commit 數，預設 25
 ```
 
 **對七成 commit 開火 = 噪音，會被無視；完全不開火 = 等於沒裝。** 目標是只有離群值會亮。既有 codebase 若普遍超標，兩種可能都成立（門檻太緊／習慣真的普遍），這時傾向維持門檻、當一次性清債——arch-guard 剛裝上時也抓出九個既有違規，清完之後長期是 0。

@@ -135,6 +135,51 @@ conf 'all:::extends StateNotifier:::no new notifier'
 ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" --strict >/dev/null 2>&1
 [ $? -eq 1 ] && { pass=$((pass + 1)); echo "  ok    --strict 對純必經點違規也 exit 1"; } || { fail=$((fail + 1)); echo "  FAIL  --strict 對純必經點違規應 exit 1"; }
 
+echo "── Python IMPORT_RE（模板範例）──"
+# 結尾 `\.` 會漏掉 `from pkg.layer import x`（layer 後面不是點）——audit 印 0、
+# 與乾淨無法分辨。模板範例必須用 boundary class 收尾，這裡拿它實跑一次。
+grep -qF '{LAYER}([^A-Za-z0-9_]|$)' "$HERE/../assets/arch-layers.conf.template" \
+  && { pass=$((pass + 1)); echo "  ok    模板 Python 範例帶 boundary class"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  模板 Python 範例缺 boundary class"; }
+
+mkdir -p py/cli py/core
+printf 'from pkg.cli import main\nfrom pkg.clitools import x\n' > py/core/a.py
+printf 'from pkg.core import count\n' > py/cli/a.py
+git add -A
+cat > "$WORK/c.sh" <<'EOF'
+ROOT="py"
+IGNORE="__never_matches__"
+PACKAGE="pkg"
+IMPORT_RE="^(from|import) ${PACKAGE}\.{LAYER}([^A-Za-z0-9_]|$)"
+LAYERS="cli core"
+PARTITIONED=""
+CHOKEPOINTS=""
+EOF
+out=$(run)
+ok "from 形式的往上 import 抓得到"      "core → cli"    "$out"
+no "層名是前綴時不誤中（cli vs clitools）" "clitools"      "$out"
+no "合法的向下 import 不報"             "py/cli/a.py"   "$out"
+
+echo "── TS IMPORT_RE（模板範例）──"
+# 錨定 alias/相對前綴——裸 .*/{LAYER} 會誤中第三方 subpath（'@angular/core'），
+# 假陽性讓人簽收一道從沒驗過的守門。
+mkdir -p ts/cli ts/core
+printf "import { x } from '@/cli';\nimport { y } from '@angular/cli';\nimport { z } from '../cli/util';\n" > ts/core/a.ts
+git add -A
+cat > "$WORK/c.sh" <<'EOF'
+ROOT="ts"
+IGNORE="__never_matches__"
+PACKAGE="unused"
+IMPORT_RE="from ['\"](@/|\.\.?/)([^'\"]*/)?{LAYER}(/|['\"])"
+LAYERS="cli core"
+PARTITIONED=""
+CHOKEPOINTS=""
+EOF
+out=$(run)
+ok "alias 形式的往上 import 抓得到"    "@/cli"        "$out"
+ok "相對路徑形式也抓得到"             "../cli/util"  "$out"
+no "第三方 subpath 撞層名不誤中"      "@angular"     "$out"
+
 echo "── exit code ──"
 LAYERS_V="features core"
 PART_V="features"

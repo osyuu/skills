@@ -20,7 +20,7 @@ Don't walk sections 1→15 linearly. Lead with the categories that cause crashes
 | Severity | Focus on these sections first | Why |
 |----------|-------------------------------|-----|
 | **CRITICAL** | §9 Security · §4 (mounted-after-`await`, subscription/timer disposal) · §12 Error handling (global capture, graceful degradation) | Hardcoded secrets, use-after-`await` crashes, and leaks ship real incidents |
-| **HIGH** | §7 Accessibility (contrast, 48×48 targets, color-not-sole-signal) · §5 Performance (build() cost, list virtualization, rebuilds) · §4 State-shape (impossible states, exhaustive async) · §3 Build-method complexity | User-visible breakage and jank; whole classes of bugs made unrepresentable |
+| **HIGH** | §7 Accessibility (contrast, 48×48 targets, color-not-sole-signal) · §5 Performance (build() cost, list virtualization, rebuilds) · §4 State-shape (impossible states, exhaustive async) · §3 Build-method complexity · §8 Platform (small-screen overflow, back navigation, declared permissions) | User-visible breakage and jank; whole classes of bugs made unrepresentable |
 | **MEDIUM** | §2 Dart pitfalls · §3 const/keys/theming · §11 Navigation · §14 DI · §13 i18n · §6 Testing | Correctness and maintainability; degrade slowly, not acutely |
 | **LOW** | §1 Project health · §10 Dependencies · §15 Static analysis config · remaining §5 micro-optimizations | Hygiene and tooling; real but rarely urgent |
 

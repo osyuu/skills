@@ -116,6 +116,15 @@
       "skills": [
         "./skills/harness-audit"
       ]
+    },
+    {
+      "name": "greenfield-flow",
+      "description": "Ordering and entry conditions for a 0→1 project: when to converge the requirement, when to lay the foundation, when NOT to install guards yet, and when review and shipping are due.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/greenfield-flow"
+      ]
     }
   ]
 }

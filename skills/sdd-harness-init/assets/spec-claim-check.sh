@@ -41,12 +41,15 @@ for g in $SPEC_GLOBS; do
 done
 [ -z "$SPECS" ] && exit 0
 
-SRC=""
-for d in $SRC_DIRS; do [ -d "$d" ] && SRC="$SRC $d"; done
-[ -z "$SRC" ] && exit 0
-
 OUT=$(mktemp) || exit 0
 trap 'rm -f "$OUT"' EXIT
+
+report() {
+    [ -s "$OUT" ] || return 0
+    printf '\033[33m⚠  spec 宣稱與 code 對不上：\033[0m\n'
+    cat "$OUT"
+    printf '\033[33m   （僅提醒、不阻擋。門檻見 hooks/spec-claim.conf。）\033[0m\n'
+}
 
 # ---- 訊號 1：打勾的任務，驗收項還沒打勾 ----
 for spec in $SPECS; do
@@ -59,6 +62,52 @@ for spec in $SPECS; do
         done
     done
 done
+
+# ---- 訊號 1b：任務全數勾銷，驗收節仍有未勾項（無 AC-ID 的 spec）----
+# design-doc 產出的 spec 刻意不帶 requirement ID，上面的逐條關聯在那種形狀下
+# 永遠配不到，改用檔案級關聯。任務證據認三種形狀：任務節的 checkbox、任務表列
+# （`| T1 |…` 行，含 ✅ 算完成、不含算未完）、同名 `<slug>.tasks.md`（design-doc
+# 模板拆出去的勾選檔）。`- [~]`（明示延後）中性：不算完成也不算未完——全 [~] 的
+# spec 沒有宣稱完成。任務節從未標記過（tdone=0）就不評——沒有宣稱就沒有 drift。
+for spec in $SPECS; do
+    case "$spec" in *.tasks.md) continue ;; esac
+    grep -qE '\*\*AC[0-9]' "$spec" 2>/dev/null && continue
+    tf="${spec%.md}.tasks.md"
+    [ -f "$tf" ] || tf=""
+    awk -v spec="$spec" '
+        BEGIN { sec = "o"; slv = 0 }
+        FILENAME != spec {
+            if      ($0 ~ /^[[:space:]]*- \[[xX]\]/) tdone++
+            else if ($0 ~ /^[[:space:]]*- \[ \]/)    topen++
+            else if ($0 ~ /^\|[[:space:]]*T[0-9]/)   { if ($0 ~ /✅/) tdone++; else topen++ }
+            next
+        }
+        /^#+[[:space:]]/ {
+            lv = 0; while (substr($0, lv + 1, 1) == "#") lv++
+            if      ($0 ~ /^#+[[:space:]]*[0-9.[:space:]]*(任務|Task)/)          { sec = "t"; slv = lv }
+            else if ($0 ~ /^#+[[:space:]]*[0-9.[:space:]]*(驗收標準|Acceptance)/) { sec = "a"; slv = lv }
+            else if (lv <= slv || sec == "o")                                     { sec = "o"; slv = lv }
+            next
+        }
+        sec == "t" && /^[[:space:]]*- \[[xX]\]/ { tdone++ }
+        sec == "t" && /^[[:space:]]*- \[ \]/    { topen++ }
+        sec == "t" && /^\|[[:space:]]*T[0-9]/   { if ($0 ~ /✅/) tdone++; else topen++ }
+        sec == "a" && /^[[:space:]]*- \[ \]/    { acopen++ }
+        END { if (tdone && !topen && acopen)
+            printf "    %s 任務已全數勾銷，但驗收標準仍有 %d 項未勾\n", spec, acopen }
+    ' "$spec" $tf >> "$OUT" 2>/dev/null
+done
+
+# **SRC 為空時只能跳過訊號 2／3，不能整支結束**：訊號 1 只讀 spec 裡的打勾狀態，
+# 不需要原始碼目錄。而下面的 grep 少了 $SRC 會改讀 stdin,所以這道 guard 對 2／3 仍是必要的。
+SRC=""
+for d in $SRC_DIRS; do [ -d "$d" ] && SRC="$SRC $d"; done
+if [ -z "$SRC" ]; then
+    printf '\033[33m⚠  spec-claim：SPEC_SRC_DIRS 指的目錄一個都不存在（%s），訊號 2／3 已跳過。\033[0m\n' "$SRC_DIRS"
+    printf '\033[33m   （改 hooks/spec-claim.conf。填錯時符號檢查什麼都不報，跟「很乾淨」分不出來。）\033[0m\n'
+    report
+    exit 0
+fi
 
 # ---- 訊號 2／3：spec 點名的符號 ----
 # 帶括號的（`foo()`）視為介面契約，不存在就報；不帶括號的只在「有定義卻沒人用」時報。
@@ -114,8 +163,5 @@ awk -v min="$MIN_LEN" '
     }
 ' srcidx="$SRCIDX" tstidx="$TSTIDX" defs="$DEFS" ignore="$IGNORE_RE" "$SRCIDX" "$TSTIDX" "$DEFS" "$SYMS" >> "$OUT"
 
-[ -s "$OUT" ] || exit 0
-printf '\033[33m⚠  spec 宣稱與 code 對不上：\033[0m\n'
-cat "$OUT"
-printf '\033[33m   （僅提醒、不阻擋。門檻見 hooks/spec-claim.conf。）\033[0m\n'
+report
 exit 0
