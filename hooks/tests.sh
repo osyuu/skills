@@ -74,6 +74,15 @@ out=$(cd "$D" && sh "$HOOKS/skill-tests.sh" 2>&1 | strip)
 ok "吃 stdin 的測試不會吞掉別的 skill（bbb）" "bbb 1 passed" "$out"
 ok "吃 stdin 的測試不會吞掉別的 skill（ccc）" "ccc 1 passed" "$out"
 
+# run.sh 自己讀 stdin 是同一個洞的另一半（額外測試那條蓋不到它）。
+D=$(newrepo)
+for n in ddd eee; do mkskill "$D" "skills/harness/$n" '#!/bin/sh
+echo "1 passed, 0 failed"'; done
+printf '#!/bin/sh\ncat >/dev/null\necho "1 passed, 0 failed"\n' > "$D/skills/harness/ddd/tests/run.sh"
+( cd "$D" && git add -A ) >/dev/null 2>&1
+out=$(cd "$D" && sh "$HOOKS/skill-tests.sh" 2>&1 | strip)
+ok "吃 stdin 的 run.sh 不會吞掉別的 skill" "eee 1 passed" "$out"
+
 echo "── marketplace-sync ──"
 D=$(newrepo); mkdir -p "$D/.claude-plugin" "$D/skills/harness/newone"
 printf '{"plugins":[]}\n' > "$D/.claude-plugin/marketplace.json"

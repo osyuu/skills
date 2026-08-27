@@ -24,5 +24,12 @@ if git diff --cached --name-only | grep -qE '^(hooks/|\.claude/hooks/)'; then
         printf '\033[33m⚠  hooks-self-test：守門自己的測試沒過\033[0m\n'
         printf '%s\n' "$_o" | grep -E 'FAIL' | head -5 | sed 's/^/    /'
     fi
+    # 「17 條斷言」說不了「這 17 條都測得到東西」——不可證偽的斷言跟真的同形。
+    if _m=$(sh "$(dirname "$0")/mutants.sh" 2>&1); then
+        printf '\033[32m✓ hooks-mutants：%s\033[0m\n' "$(printf '%s' "$_m" | tail -1)"
+    else
+        printf '\033[33m⚠  hooks-mutants：有注入沒讓 tests.sh 變紅\033[0m\n'
+        printf '%s\n' "$_m" | grep -A1 FAIL | head -6 | sed 's/^/    /'
+    fi
 fi
 # <<< hooks-self-test <<<

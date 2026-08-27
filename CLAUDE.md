@@ -13,7 +13,7 @@ skill 依用途分成 `skills/harness/`(裝守門)、`skills/workflow/`(做事�
 | skill-tests | 改了某 skill 的 `scripts/` `assets/` `tests/` 就跑它 `tests/` 下的每一支腳本，再跑 `mutants.sh` |
 | marketplace-sync | 新增 `skills/<category>/<name>/` 但 `marketplace.json` 沒登錄 |
 | sync-check | `.claude/hooks/` 與 `hooks/` 的部署副本跟 skill `assets/` 的來源不一致 |
-| hooks-self-test | 動到 `hooks/` 或 `.claude/hooks/` 就跑 `hooks/tests.sh`（守門自己的回歸測試） |
+| hooks-self-test | 動到 `hooks/` 或 `.claude/hooks/` 就跑 `hooks/tests.sh` 與 `hooks/mutants.sh`（守門自己的回歸測試＋突變） |
 
 **fresh clone / 新 worktree 要先跑 `git config core.hooksPath hooks`** —— 此設定不進版控，沒設就是全部靜默失效，而那看起來跟有守門一模一樣。
 
