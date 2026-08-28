@@ -73,8 +73,12 @@ def _conf():
     會變成恆開火、宣稱那半變成恆不開火。
     """
     out = {}
+    # **conf 要跟著腳本走。** `CLAIM_CHECK_HOME` 只在安裝期存在,hook 執行期沒有——
+    # 裝到非 `~/.claude` 的位置時,安裝器寫的那份 conf 永遠讀不到,而失效方向正是
+    # 「宣稱詞表恆不開火」。所以也找腳本自己的上一層。
+    beside = Path(__file__).resolve().parent.parent / "claim-check.conf"
     home = os.environ.get("CLAIM_CHECK_HOME") or str(Path.home() / ".claude")
-    for path in (Path("hooks/claim-check.conf"), Path(home) / "claim-check.conf"):
+    for path in (Path("hooks/claim-check.conf"), beside, Path(home) / "claim-check.conf"):
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
@@ -260,8 +264,9 @@ RULES = [
      # 與 git 歷史敘述,所以受詞收斂成版控名詞。
      _re(r"(已經? ?commit|commit 了|commit 完|已經? ?merge|merge 完|進版控了)"
          r"|(?i:\b(committed|merged) (it|them|this|that"
-         r"|the (change|changes|fix|fixes|branch|PR|commit|patch|work))\b)"
-         r"|(?i:\bpushed to \S+)"
+         r"|the (change|changes|fix|fixes|branch|PR|commit|patch))\b)"
+         r"|(?i:\bpushed to (origin|upstream|main|master|develop|HEAD"
+         r"|[\w.-]+/[\w.-]+)\b)"
          r"|(?i:\bmerged (to|into) (main|develop|master)\b)",
          "CLAIM_COMMITTED_CLAIM_RE"),
      lambda ix: ix["git"] >= 0,
@@ -293,18 +298,34 @@ RULES = [
 ]
 
 # 命中的那一句若是**否定、疑問、或在講別人做的事**,它就不是宣稱。
-# 沒有這一層時英文那半十種形狀十中十誤中(`I have not committed the changes`、
-# `Their README claims all tests pass`、`Is it fixed?`)——中文靠「已經／了／完」
-# 標記完成態,英文沒有任何完成態標記,只能反過來排除。
-# **只看命中位置之前**:句尾另一個子句裡的 `not` 管不到已經講出口的那半句。
-HEDGE = re.compile(
-    r"\b(not|never|whether|before|after|once|should|would|will|need to|make sure"
-    r"|claims?|says?|said|asked|upstream|assum\w+)\b|n't|如果|是否|還沒|尚未|要先|之前"
-    , re.I)
+# 中文靠「已經／了／完」標記完成態,英文沒有,只能反過來排除。
+#
+# **兩類 hedge 的作用範圍不同**:
+#   否定類跨子句——`I have not, as you asked, committed the changes` 的插入語會把
+#     `not` 切到另一個子句去,只看子句就攔不到。
+#   條件類只到子句——`如果你想先收工,現在是個乾淨的斷點:測試全綠` 的後半是實打實的
+#     宣稱,讓 `如果` 跨過去就變成把誤判換成漏抓。
+# 轉折詞之後重新起算:`I have not run the linter, but all tests pass` 的後半是宣稱。
+HEDGE_NEG = re.compile(
+    r"\b(not|never|cannot|can ?not|unable|nothing|none|without)\b|n't"
+    r"|沒有|沒能|不是|還沒|尚未|無法|未能|並未|不會", re.I)
+# `claims?`／`says?` 必須帶子句,否則 `claim-check`、`spec-claim` 這種**識別字**會被
+# 當成轉述——連字號是詞界,而那正好系統性地發生在這個 skill 自己的 repo 上。
+# `after`／`once` 不收:英文技術敘述裡它們標記的多半是**完成態**(「做完之後」),
+# 當 hedge 方向剛好相反。
+HEDGE_COND = re.compile(
+    r"\b(if|unless|when|until|whenever|whether|before|should|would|will"
+    r"|hope\w*|need to|make sure|plan(s|ned)? to|wrote|writes"
+    r"|asked|upstream|assum(e|ed|es|ing|ption))\b"
+    # 連字號也要當詞界:`\b` 在 `claim-check` 的 `claim` 後面成立,於是這個 skill
+    # 自己的識別字被當成轉述,把 repo 裡的真宣稱系統性地吃掉。
+    # `said` 不收:`As I said earlier the tests pass` 是**重申自己的宣稱**,
+    # 而漏抓是靜默的、誤判只是噪音。現在式的 `claims`/`says` 才多半在轉述別人。
+    r"|(?<![-\w])(claims?|says)(?![-\w])"
+    r"|如果|是否|要先|之前|打算|預計", re.I)
+CONTRAST = re.compile(r"\b(but|however|although|though)\b|但是|但|不過|然而", re.I)
+QUESTION = re.compile(r"[?？]\s*$|嗎|呢")
 SENT_END = re.compile(r"[.!?。！？\n]")
-# hedge 只回看到**上一個子句邊界**為止。整句回看的話
-# 「如果你想先收工,現在是個乾淨的斷點:所有東西都 commit 了、測試全綠」會被前面那個
-# 「如果」蓋掉——而後半是實打實的宣稱。疑問句仍以整句判定。
 CLAUSE_END = re.compile(r"[.!?。！？\n,;:，、；：]")
 
 
@@ -313,13 +334,22 @@ def _is_claim(text, at):
     sent_start = 0
     for m in SENT_END.finditer(text[:at]):
         sent_start = m.end()
-    end = SENT_END.search(text, at)
-    if text[sent_start:end.end() if end else len(text)].rstrip().endswith(("?", "？")):
-        return False
+    sent_end = SENT_END.search(text, at)
     clause_start = sent_start
     for m in CLAUSE_END.finditer(text[sent_start:at]):
         clause_start = sent_start + m.end()
-    return not HEDGE.search(text[clause_start:at])
+    clause_end = CLAUSE_END.search(text, at)
+    clause = text[clause_start:clause_end.end() if clause_end else len(text)]
+    # 疑問判定降到**子句**:`Tests pass, should I commit?` 的前半仍是宣稱,
+    # 用整句判會被後面那個問號整條吃掉——而那只取決於打的是逗號還是句號。
+    if QUESTION.search(clause):
+        return False
+    neg_from = sent_start
+    for m in CONTRAST.finditer(text[sent_start:at]):
+        neg_from = sent_start + m.end()
+    if HEDGE_NEG.search(text[neg_from:at]):
+        return False
+    return not HEDGE_COND.search(text[clause_start:at])
 
 
 # 被質疑的訊號。這種回合最容易生一段理由來守住已經講出口的結論。

@@ -323,6 +323,38 @@ rep("h13", "h13.jsonl")
 mk("h14.jsonl", "go", "Edit|/tmp/a.go", "T:The merge strategy here is rebase.")
 rep("h14", "h14.jsonl")
 
+# 兩類 hedge 的作用範圍不同 / hedge 詞不得吃掉真宣稱
+mk("h15.jsonl", "go", "Edit|/tmp/a.go", "T:I have not, as you asked, committed the changes.")
+rep("h15", "h15.jsonl")
+mk("h16.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:I have not run the linter, but all tests pass.")
+rep("h16", "h16.jsonl")
+mk("h17.jsonl", "go", "Edit|/tmp/a.go", "T:If the tests pass, we can merge.")
+rep("h17", "h17.jsonl")
+mk("h18.jsonl", "go", "Edit|/tmp/a.go", "T:Keep iterating until tests pass.")
+rep("h18", "h18.jsonl")
+mk("h19.jsonl", "go", "Edit|/tmp/a.go", "T:I cannot confirm that tests pass.")
+rep("h19", "h19.jsonl")
+mk("h20.jsonl", "go", "Edit|/tmp/a.dart", "T:測試並沒有全綠。")
+rep("h20", "h20.jsonl")
+mk("h21.jsonl", "go", "Edit|/tmp/a.dart", "T:我無法確認測試通過。")
+rep("h21", "h21.jsonl")
+mk("h22.jsonl", "go", "Edit|/tmp/a.dart", "T:測試綠了嗎")
+rep("h22", "h22.jsonl")
+mk("h23.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:Tests pass, should I commit?")
+rep("h23", "h23.jsonl")
+mk("h24.jsonl", "go", "Edit|/tmp/a.dart", "T:claim-check 的測試全綠。")
+rep("h24", "h24.jsonl")
+mk("h25.jsonl", "go", "Edit|/tmp/a.dart", "T:改用 assumeIsolated 之後測試全綠。")
+rep("h25", "h25.jsonl")
+mk("h26.jsonl", "go", "Bash|swift build", "Edit|/tmp/a.swift", "T:After my fix the build succeeded.")
+rep("h26", "h26.jsonl")
+mk("h27.jsonl", "go", "Edit|/tmp/a.go", "T:Their README claims all tests pass, but there is no CI.")
+rep("h27", "h27.jsonl")
+mk("h28.jsonl", "go", "Edit|/tmp/a.go", "T:Each item is pushed to the results array.")
+rep("h28", "h28.jsonl")
+mk("h29.jsonl", "go", "Edit|/tmp/a.go", "T:I committed the work to memory.")
+rep("h29", "h29.jsonl")
+
 # 被質疑後未查證
 mk("t6.jsonl", "為何要這樣？不對吧", "Bash|grep -n x DualTrackView.swift",
    "T:因為 `ReferenceBookmarkStore` 是靠路徑解析的。")
@@ -510,6 +542,37 @@ printf '\n「帶受詞或帶狀態詞」——這是明著宣告過的不變式,
 no "fixed 沒有受詞時不算正確性宣稱" "正確性宣稱" "$(r h12)"
 no "tests 沒有狀態詞時不算測試綠" "測試" "$(r h13)"
 no "merge 沒有 safe/ready/good 時不算正確性宣稱" "正確性宣稱" "$(r h14)"
+
+printf '\n否定跨子句、條件不跨子句(兩類 hedge 的作用範圍不同)\n'
+# 插入語會把 not 切到別的子句去,只看子句就攔不到。
+no "插入語不得把否定切掉" "版控" "$(r h15)"
+# 反向:轉折之後重新起算。整句回看的話後半這句真宣稱會被前半的 not 吃掉。
+ok "轉折之後的宣稱不得被前半的否定吃掉" "測試" "$(r h16)"
+
+printf '\n英文的條件與計畫標記(中文的「如果」有收,英文的不能漏)\n'
+no "if 條件句不算測試綠" "測試" "$(r h17)"
+no "until 計畫句不算測試綠" "測試" "$(r h18)"
+no "cannot 不算測試綠(n't 配不到 cannot)" "測試" "$(r h19)"
+
+printf '\n中文的否定與疑問(原本只收了六個條件詞)\n'
+no "並沒有不算測試綠" "測試" "$(r h20)"
+no "無法確認不算測試綠" "測試" "$(r h21)"
+no "句末沒問號的嗎也算疑問" "測試" "$(r h22)"
+
+printf '\n疑問判定降到子句(不然只取決於打逗號還是句號)\n'
+ok "宣稱後面接問句不得整句被吃掉" "測試" "$(r h23)"
+
+printf '\nhedge 詞不得吃掉真宣稱\n'
+# `\b` 在 `claim-check` 的 claim 後面成立,於是這個 skill 自己的識別字被當成轉述,
+# 而那系統性地發生在最常拿來回放的語料上。
+ok "連字號識別字不得被當成轉述" "測試" "$(r h24)"
+ok "assumeIsolated 不得被當成 assume" "測試" "$(r h25)"
+ok "after 標記的是完成態,不是 hedge" "build" "$(r h26)"
+no "轉述他人文件仍不算測試綠" "測試" "$(r h27)"
+
+printf '\npushed to 與 commit 的受詞要收斂\n'
+no "推進陣列不算 commit 宣稱" "版控" "$(r h28)"
+no "committed the work 不算 commit 宣稱" "版控" "$(r h29)"
 
 printf '\n被質疑後未查證\n'
 ok "對沒打開過的檔下結論" "質疑後未查證" "$(r t6)"

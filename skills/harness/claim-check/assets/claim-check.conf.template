@@ -17,7 +17,10 @@ CLAIM_TEST_RE=
 CLAIM_BUILD_RE=
 
 # 會改動原始碼的指令(codegen、formatter、fixer)與副檔名。
-# 例:gofmt -w|cargo fmt|prettier --write|eslint --fix|>>?\s*[\w./~-]+\.(ts|go|rs)
+# 例:gofmt -w|prettier --write|eslint --fix|>>?\s*[\w./~-]+\.(ts|go|rs)
+# **唯讀形式要自己排除**:`cargo fmt` 裸寫會配到 CI 的 `cargo fmt --check`,於是格式
+# 檢查被算成「改過 code」、緊接著的「測試綠」誤報。要寫成
+# cargo fmt(?! [^\n]*(--check|--dry-run))。內建對 `dart format` 已經這樣做了。
 CLAIM_MUTATE_RE=
 
 # ── 宣稱詞表 ──────────────────────────────────────────────────────────
@@ -26,7 +29,9 @@ CLAIM_MUTATE_RE=
 # 而後者跟「這個 session 很誠實」在畫面上完全一樣,不會有人來跟你說。
 #
 # 內建中英各一半。**第三種語言、團隊自己的口頭禪、翻譯腔,一律得補在這裡。**
-# 一樣是**附加**到內建清單,不取代。每項都是 regex,不區分大小寫要自己寫 (?i:...)。\n# **不能寫行內註解以外的 `#`**:` #` 之後的東西會被當成註解剝掉。\n# 壞掉的 regex 只會廢掉它自己那一條(會在 stderr 出聲),不會拖垮其他規則。
+# 一樣是**附加**到內建清單,不取代。每項都是 regex,不區分大小寫要自己寫 (?i:...)。
+# ` #` 之後的東西會被當成行內註解剝掉——值裡真的要有 `#` 就別在前面留空白。
+# 壞掉的 regex 只會廢掉它自己那一條(會在 stderr 出聲),不會拖垮其他規則。
 
 # 「有東西正在背景跑」。例:バックグラウンドで実行中|läuft noch
 CLAIM_RUNNING_CLAIM_RE=
