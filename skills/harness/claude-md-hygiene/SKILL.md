@@ -7,6 +7,7 @@ description: >-
   「這條規範還準嗎」，或你正在編輯任何常駐指南時，主動使用。三條路徑：既有檔的審查重寫、
   專案初期的第一份（需求還糊先交棒 design-doc）、審完註冊一道 PostToolUse hook 防復發。
   純寫「需求→設計書」用 design-doc；寫給人看的 README 用一般文件寫作。
+  也認 review my CLAUDE.md / AGENTS.md is stale / CLAUDE.md を整理。
 ---
 
 # CLAUDE.md Hygiene — 常駐規範檔別腐爛

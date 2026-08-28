@@ -9,6 +9,7 @@ description: >-
   或你正要為一個 repo 安裝 pre-commit 檢查、剛裝完守門想確認它不是靜默失效、
   或發現 repo 有 hooks/ 卻不確定涵蓋了什麼時，主動使用。
   純寫應用 code 不要用；已經明確知道只要裝某一個 skill 時直接叫那個 skill，不必繞這裡。
+  也認 検査が効いてるか。
 ---
 
 # harness-audit — 守門盤點與驗證

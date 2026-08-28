@@ -7,6 +7,7 @@ description: >-
   註解規範 / 幫我管註解量」，或抱怨 AI 寫的註解沒人想看時，主動使用。泛用（任何語言，
   靠副檔名對應註解符號）。與 arch-guard、sdd-harness-init 共用同一個 pre-commit。
   單純要寫或改註解本身、或做一般 code review 時不要用。
+  也認 too many comments / コメントが多すぎる。
 ---
 
 # comment-budget — 註解量守門

@@ -1,6 +1,7 @@
 ---
 name: flutter-dart-code-review
 description: Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, testing, i18n, navigation, DI, and clean architecture. Use this whenever reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when the user asks to check code quality, find anti-patterns or smells, or vet code before merging, even if they don't literally say "review" (審查 / code review / 檢查 Flutter 程式碼 / 這段 Dart 有沒有問題). Skip it for pure backend/CLI Dart with no Flutter surface, and for writing new code rather than reviewing existing code.
+  也認 review this Dart / Flutter コードレビュー。
 ---
 
 # Flutter/Dart Code Review Best Practices

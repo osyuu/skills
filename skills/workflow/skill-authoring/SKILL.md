@@ -6,6 +6,7 @@ description: >-
   skill / 改進這個 skill / 這個 skill 怎麼沒觸發 / 幫 skill 潤一下 / review 這個 SKILL.md
   / 把這個流程變成 skill」,或在這個 skills repo 裡新增/編輯任何 SKILL.md
   時,主動使用。需要跑嚴謹的 eval/benchmark 迭代時改用 bundled 的 skill-creator。
+  也認 write a skill / this skill never fires / skill を書きたい。
 ---
 
 # Skill Authoring — 房規與範本

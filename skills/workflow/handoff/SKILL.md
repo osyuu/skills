@@ -5,6 +5,7 @@ description: >-
   並機械盤點工作區與還活著的 agent。當使用者說「做 compact 前處理 / 準備 compact / 幫我整理交接 /
   把重要的記起來 / 要開新 session 了 / 收個尾 / 這個 session 太長了」時，主動使用。
   純粹寫文件或寫 CLAUDE.md 不要用；那些是 repo 的產物，本 skill 只處理跨 session 的記憶。
+  也認 context is running out / hand this off / 引き継ぎメモ。
 ---
 
 # handoff — 交接:只寫 repo 查不到的東西

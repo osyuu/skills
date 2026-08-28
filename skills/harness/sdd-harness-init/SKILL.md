@@ -7,6 +7,7 @@ description: >-
   DECISIONS.md 機制套到新專案時，主動使用。也涵蓋「spec 說做了但 code 沒做」這半邊——
   文件宣稱完成卻沒回寫、任務打勾但驗收項沒驗、改到沒人在用的死碼、spec 點名的介面不存在。這是「安裝器 / 佈線」——需求→設計書的『生成』請用 design-doc
   skill。純寫應用 code 不要用。
+  也認 decision log / ADR / spec drift / 意思決定ログを残したい。
 ---
 
 # SDD Harness Init — 決策記錄 drift-guard 安裝器

@@ -8,6 +8,7 @@ description: >-
   這次新增了什麼功能要寫進更新」,或在動 CHANGELOG、release_notes/、fastlane metadata、
   截圖 config 時,主動使用。純程式碼的變更、PR 描述、內部設計文件(用 design-doc)、
   以及沒有使用者可見產出的純版號變更,都不要用。
+  也認 cut a release / リリース準備。
 ---
 
 # Release Assets — 把非程式碼交付物交乾淨
