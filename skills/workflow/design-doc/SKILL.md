@@ -5,6 +5,7 @@ description: >-
   / 設計文件 / spec / 把這個需求設計一下 / 開發前先設計」，或給了禪道 (ZenTao) story ID
   要接著開發時，主動使用。純寫應用 code、或只是要裝 decision log / drift 守門（那是
   sdd-harness-init）不要用。
+  也認 write a design doc / spec this out / 設計書を書いて。
 ---
 
 # Requirement → Detailed Design Document
@@ -93,9 +94,14 @@ description: >-
 
 4. 寫完後回報：檔案路徑、關鍵決策、待確認事項，**並明講目前的版控歸屬**。若是不進版控，補一句風險：會被 commit 的檔（如 `CLAUDE.md`、`DECISIONS.md`）若指向這份設計書，對隊友 / CI 就是懸空指標。**把它 flag 給使用者，別自己改指向或強制 commit**——那是專案相依的決定，不歸這裡管。
 
-### Step 4 — 銜接 plan（選用）
+### Step 4 — 銜接實作：交棒給 `dev-loop`
 
-設計書定稿後，它就是很好的 plan 輸入。若使用者要接著實作，建議進 plan：用設計書的「整體設計 / 資料模型 / 介面契約」推導實作步驟與檔案改動順序。設計書回答 WHAT/結構，plan 回答 HOW/順序，兩者互補。
+設計書定稿後，**接下來叫 `dev-loop`**。它管的是這份設計書之後的三棒：定順序、實作、回環驗收，
+並且帶著每一棒的完成條件——包括把下面的 Step 5 在**實作完成的那一刻**拉回來，那是這份 skill
+自己的 description 到不了的時機（它的觸發詞全在開發前）。
+
+設計書回答 WHAT/結構，plan 回答 HOW/順序，兩者互補；plan 要的三個答案（動哪些檔、什麼順序、
+怎麼驗）在 `dev-loop` 裡。
 
 ### Step 5 — 回環驗證 + 回寫（spec 當工單用時**非選用**）
 

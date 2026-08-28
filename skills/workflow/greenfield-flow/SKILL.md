@@ -66,6 +66,11 @@ claude-md-hygiene    → greenfield 分支，寫第一份 CLAUDE.md
 | 想法要試 | ★ `prototype`（throwaway，驗完只留決策） |
 | merge 衝突 | ★ `resolving-merge-conflicts` |
 | **決策翻案** | 當下寫進 `DECISIONS.md`，不要留到交付前憑記憶重建 |
+| **整段的接力與完成條件** | `dev-loop`（本 marketplace，★ 那些沒裝時它仍然成立） |
+
+★ 標的四支走 mattpocock marketplace、**不隨本 marketplace 同步**，新機器上可能一支都沒有。
+`dev-loop` 是本地的那條主線：它不取代 ★ 的做法，但它定義每一棒何時算完、以及實作完之後
+棒子交回哪裡。
 
 ### Phase 4｜有 code 了，才輪到守門
 
