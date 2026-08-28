@@ -39,7 +39,7 @@ Osyuu 的個人 Claude Code skill marketplace,跨開發環境共用。一個 `ma
 | `design-doc` | 需求 → 可驗證、可餵實作的詳細設計書(SDD);先逼問模糊點再產契約 |
 | `greenfield-flow` | 0→1 專案的進場順序:何時收斂需求、何時打地基、何時**還不要**裝守門 |
 | `handoff` | compact / 換 session 之前,把下一個 session 查不到的東西落成記憶檔,並盤點工作區與還活著的 agent |
-| `teammate` | 多 agent 協作房規:開幾個由視角決定、派工令必備六條、idle≠交付、review 的 baseline 凍結 |
+| `teammate` | 多 agent 協作房規:開幾個由視角決定、派工令必備七條、idle≠交付、review 的 baseline 凍結 |
 | `release-assets` | 把使用者會看到的非程式碼交付物交乾淨:release notes、商店截圖、changelog、版本號 |
 | `skill-authoring` | 寫/改/審 skill 的房規 + 範本 + 本 marketplace 登錄流程 |
 
