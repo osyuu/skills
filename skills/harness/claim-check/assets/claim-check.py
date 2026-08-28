@@ -297,30 +297,20 @@ RULES = [
      "說了注入故障，但沒有『改動 + 跑測試』的組合"),
 ]
 
-# 命中的那一句若是**否定、疑問、或在講別人做的事**,它就不是宣稱。
-# 中文靠「已經／了／完」標記完成態,英文沒有,只能反過來排除。
-#
-# **兩類 hedge 的作用範圍不同**:
-#   否定類跨子句——`I have not, as you asked, committed the changes` 的插入語會把
-#     `not` 切到另一個子句去,只看子句就攔不到。
-#   條件類只到子句——`如果你想先收工,現在是個乾淨的斷點:測試全綠` 的後半是實打實的
-#     宣稱,讓 `如果` 跨過去就變成把誤判換成漏抓。
-# 轉折詞之後重新起算:`I have not run the linter, but all tests pass` 的後半是宣稱。
+# 命中的那一句若是否定、疑問、或在講別人做的事,它就不是宣稱。
+# **兩類的作用範圍不同,合成一類就會二選一地壞掉**:否定類要跨子句(`I have not,
+# as you asked, committed…` 的插入語會把 `not` 切走),條件類不能跨(否則
+# 「如果你想先收工,…:測試全綠」的後半這句真宣稱被吃掉)。
 HEDGE_NEG = re.compile(
     r"\b(not|never|cannot|can ?not|unable|nothing|none|without)\b|n't"
     r"|沒有|沒能|不是|還沒|尚未|無法|未能|並未|不會", re.I)
-# `claims?`／`says?` 必須帶子句,否則 `claim-check`、`spec-claim` 這種**識別字**會被
-# 當成轉述——連字號是詞界,而那正好系統性地發生在這個 skill 自己的 repo 上。
-# `after`／`once` 不收:英文技術敘述裡它們標記的多半是**完成態**(「做完之後」),
-# 當 hedge 方向剛好相反。
 HEDGE_COND = re.compile(
     r"\b(if|unless|when|until|whenever|whether|before|should|would|will"
     r"|hope\w*|need to|make sure|plan(s|ned)? to|wrote|writes"
     r"|asked|upstream|assum(e|ed|es|ing|ption))\b"
-    # 連字號也要當詞界:`\b` 在 `claim-check` 的 `claim` 後面成立,於是這個 skill
-    # 自己的識別字被當成轉述,把 repo 裡的真宣稱系統性地吃掉。
-    # `said` 不收:`As I said earlier the tests pass` 是**重申自己的宣稱**,
-    # 而漏抓是靜默的、誤判只是噪音。現在式的 `claims`/`says` 才多半在轉述別人。
+    # **連字號也要當詞界**:`\b` 在 `claim-check` 的 `claim` 後面成立,於是這個 skill
+    # 自己的識別字被當成轉述。`said`、`after`、`once` 刻意不收——它們在英文技術敘述裡
+    # 標記的是完成態(「做完之後」「我先前說過」),當 hedge 方向剛好相反。
     r"|(?<![-\w])(claims?|says)(?![-\w])"
     r"|如果|是否|要先|之前|打算|預計", re.I)
 CONTRAST = re.compile(r"\b(but|however|although|though)\b|但是|但|不過|然而", re.I)
