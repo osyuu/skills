@@ -13,6 +13,7 @@
 #   (default)   warn-only — print violations, exit 0. For pre-commit.
 #   --strict    exit 1 if any violation (for CI / pre-push).
 #   --audit     print violations + a per-rule count summary, exit 0.
+#               Exits 1 only when the config still has <TODO> — see below.
 #
 # Config path override: ARCH_LAYERS_CONF=path sh arch-guard-check.sh
 # Deterministic (git grep); safe to run from a repo root.
@@ -34,14 +35,15 @@ fi
 # 未填的 <TODO> 會讓每一條 grep 都配不到,而配不到印出來就是「0 條違規」——
 # 與真的乾淨一模一樣。**這裡必須出聲**:一道恆 0 的守門比不裝更糟,
 # 它讓人以為那條規則有人在看。
-# exit code 照各模式原本的契約:warn/audit 出聲但 exit 0(pre-commit 不擋),
-# strict 才 exit 1。**這裡不能無條件 exit 1**——併進既有 pre-commit(husky 之類)的人
+# **只有 warn 能 exit 0**:它是 pre-commit 那條路,而併進既有 pre-commit(husky 之類)的人
 # 會照檔頭寫的「warn-only, exit 0」不加 `|| true`,那時未填的 conf 會讓整個 repo
-# commit 不進去。
+# commit 不進去。strict 與 audit 都回非零——audit 不在 pre-commit 上,擋不到任何人,
+# 而它 exit 0 + stdout 全空的話,照安裝指示讀「0 hits」的人會把每個 chokepoint 設成
+# `all`,守門一次都沒跑過就被當成通過了。
 case "$ROOT$PACKAGE$IMPORT_RE$LAYERS$PARTITIONED$IGNORE" in
   *"<TODO"*)
     echo "arch-guard: $conf 還有未填的 <TODO> — 這次檢查等於沒跑" >&2
-    [ "$mode" = "strict" ] && exit 1
+    [ "$mode" = "warn" ] || exit 1
     exit 0 ;;
 esac
 

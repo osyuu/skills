@@ -171,12 +171,13 @@ cp "$_tmpl" "$_sb2/hooks/arch-layers.conf"
 [ $? -ne 0 ] \
   && { pass=$((pass + 1)); echo "  ok    未填 conf 時 --strict exit 非零"; } \
   || { fail=$((fail + 1)); echo "  FAIL  未填 conf 時 --strict 回 0 — CI 對一道死掉的守門放行"; }
+# install.sh 教人「看 --audit 報幾條來決定 mode」。exit 0 + stdout 全空會被讀成 0 hits,
+# 於是每個 chokepoint 都設成 all——守門一次都沒跑過就被當成通過。
+_ao=$(cd "$_sb2" && sh hooks/arch-guard-check.sh --audit 2>/dev/null); _arc=$?
+{ [ "$_arc" -ne 0 ] || [ -n "$_ao" ]; } \
+  && { pass=$((pass + 1)); echo "  ok    未填 conf 時 --audit 不會靜默回 0"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  未填 conf 時 --audit exit 0 且 stdout 全空 — 會被讀成「0 hits」"; }
 rm -rf "$_sb2"
-
-# 安裝器插進 pre-commit 的那行必須帶 || true,否則 warn-only 的契約靠不住
-grep -q 'arch-guard-check.sh" || true' "$HERE/../scripts/install.sh" \
-  && { pass=$((pass + 1)); echo "  ok    install.sh 插入的呼叫帶 || true"; } \
-  || { fail=$((fail + 1)); echo "  FAIL  install.sh 插入的呼叫少了 || true"; }
 
 echo "── Python IMPORT_RE（模板範例）──"
 # 結尾 `\.` 會漏掉 `from pkg.layer import x`（layer 後面不是點）——audit 印 0、
@@ -286,6 +287,42 @@ D=$(newrepo2); cd "$D" || exit 1
 mkdir -p .husky; git config core.hooksPath .husky
 sh "$INSTALL" >/dev/null 2>&1
 ok2 "既有 hooksPath 不被覆寫" ".husky" "$(git config --get core.hooksPath)"
+
+# warn-only 的契約是「pre-commit 這條路擋不到任何 commit」。驗 install.sh 的原始碼字面
+# (當初的寫法)兩個方向都可以被打破:別處留一行帶 `|| true` 的註解就綠、真正的呼叫少
+# 一個空格就紅。所以裝完直接跑真的 commit。
+# 兩條分開驗,因為它們證的不是同一件事:有違規時 checker 自己就 exit 0(warn 模式),
+# 所以那條**驗不到 `|| true`**——要驗它得讓 checker 回非零。
+D=$(newrepo2); cd "$D" || exit 1
+sh "$INSTALL" >/dev/null 2>&1
+mkdir -p lib/ui lib/data
+printf "import 'package:x/data/a.dart';\n" > lib/ui/a.dart
+printf "import 'package:x/ui/a.dart';\n" > lib/data/a.dart
+# IMPORT_RE 要寫死套件名——checker 只代換 {LAYER},PACKAGE 那個欄位它不代入
+cat > hooks/arch-layers.conf <<'CONF'
+ROOT=lib
+PACKAGE=x
+IMPORT_RE="^import 'package:x/{LAYER}/"
+LAYERS="ui data"
+PARTITIONED=""
+IGNORE="__never_matches__"
+CONF
+git add -A >/dev/null 2>&1
+out=$(cd "$D" && sh hooks/arch-guard-check.sh 2>&1)
+ok2 "測試前提:這份 conf 真的有違規可報" "data/a.dart" "$out"
+out=$(git commit -m t 2>&1); rc=$?
+[ $rc -eq 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    裝完後有違規仍 commit 得進去(warn-only)"; } \
+  || { fail=$((fail + 1)); printf '  FAIL  裝完後有違規就擋死 commit\n        實得：%s\n' "$out"; }
+
+# checker 回非零(壞 conf、被刪、未來加了新的 exit 1 路徑)時,pre-commit 仍不得擋。
+# 這是 `|| true` 唯一的觀測面——拿掉它這條就紅。
+printf '#!/bin/sh\nexit 1\n' > hooks/arch-guard-check.sh
+echo x > x.txt; git add -A >/dev/null 2>&1
+out=$(git commit -m t2 2>&1); rc=$?
+[ $rc -eq 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    checker 回非零也擋不到 commit(|| true)"; } \
+  || { fail=$((fail + 1)); printf '  FAIL  checker 回非零就擋死 commit — install.sh 少了 || true\n        實得：%s\n' "$out"; }
 cd "$WORK" || exit 1
 
 echo

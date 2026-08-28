@@ -99,4 +99,5 @@ echo "  1. Fill hooks/arch-layers.conf (ROOT, PACKAGE, IMPORT_RE, LAYERS top→b
 echo "     and CHOKEPOINTS if the repo has 'must go through X' rules worth grepping."
 echo "  2. Run: sh hooks/arch-guard-check.sh --audit   # see current violations"
 echo "     Pick each chokepoint's mode from what this reports: 0 hits -> all, debt -> new."
+echo "     A non-zero exit means step 1 is not finished — read what it says, do NOT read it as 0 hits."
 echo "  3. Add the layering section to CLAUDE.md (assets/claude-md-arch-section.md)."

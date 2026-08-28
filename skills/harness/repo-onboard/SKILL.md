@@ -39,16 +39,29 @@ git ls-files --full-name ':/' | grep -E '(^|/)(pubspec\.yaml|package\.json|pnpm-
 **這條回 0 筆本身是發現,不是通過**——先確認這個 repo 真的沒有建置檔,再往下走。
 `':/'` 不能省:少了它只列 cwd 子樹,在 `packages/api/` 裡跑會只看到那一個。
 
-**每一筆都要在 profile 裡有一行歸類**(認得 → 指令是什麼;不認得 → 問)。
-上面那串副檔名同樣是**起點不是窮舉**。**再做一次不依賴清單的探測**:列出所有 top-level
-目錄與 repo 裡不重複的副檔名,逐個問「這一套有沒有對應的建置鏈」。
-清單認不出的生態(Scala 的 `build.sbt`、Bazel 的 `BUILD`/`WORKSPACE`、Terraform 的 `.tf`…)
-只有這一步看得到——**命中 2 筆不是 0 筆,「回 0 是發現」那句攔不住部分命中**。
+**每一筆都要在 profile 的盤點區有一行歸類**(認得 → 指令是什麼;不認得 → 問),
+格式是 `<路徑><TAB><歸類>`,一行一筆——下面第 4 條要拿它機械比對。
+
+上面那串副檔名是**這次寫下來時的快照**,而生態會長出新的建置檔,清單不會自己跟上。
+所以**再做一次不依賴清單的探測**,把判斷權從清單交回現場:
+
+```sh
+G="git -c core.quotepath=off ls-files --full-name :/"   # quotepath 關掉,否則非 ASCII 路徑會被加引號
+$G | grep / | sed 's#/.*##' | sort -u                  # top-level 目錄(grep / 濾掉根目錄的檔案)
+$G | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | sort | uniq -c | sort -rn
+```
+
+**問到哪裡為止**:副檔名只問**出現 ≥ 3 個檔**的那些,top-level 目錄則每個都問。
+不設界線這一步會爆掉——一個真 repo 量過是 43 種副檔名、16 個 top-level 目錄,
+而副檔名那半大多是 `png`/`ttf`/`gitkeep` 這種與建置鏈無關的;≥3 把它砍到 20。
+沒有界線時 agent 會自己決定跳過哪些,而跳過的理由不會寫下來。
+
+**這一步防的是部分命中**——`api/go.mod` + `web/package.json` + `svc/Payments.csproj` 的 repo,
+前兩個認得就容易當成盤點完了。**缺席不是 `<TODO>`**,所以只查 TODO 的檢查看不到它;
+「回 0 筆是發現」那句也攔不住,因為它根本不是 0 筆。
 補進 profile 的那些,下面第 4 條允許它比指令輸出多。
-真實失效是**部分命中**——`api/go.mod` + `web/package.json` + `svc/Payments.csproj` 的 repo,
-前兩個認得就容易當成盤點完了,而 .NET 那半從頭到尾沒被列出來;**缺席不是 `<TODO>`**,
-所以只查 TODO 的檢查看不到它。monorepo 的建置檔常在 depth 2(`packages/api/package.json`),
-所以用 `git ls-files` 而不是掃 top-level。
+monorepo 的建置檔常在 depth 2(`packages/api/package.json`),所以用 `git ls-files`
+而不是掃 top-level。
 
 ## 2. 帶著建議問(一節一問,預設答案讓人一個字接受)
 
@@ -116,11 +129,21 @@ pre-commit 型,Stop / PostToolUse 型要用該 skill 自己的方式(例如 `--r
 2. 每一道裝上的守門都**注入過故障並看到它開火**——用這個 repo 的實際技術棧**與這個 session
    的語言**造違規,不是用 skill 範例裡的。
 3. 至少一道守門**注入「不該開火」的輸入並確認它沒開火**。單向的綠燈證明不了鑑別力。
-4. **指令輸出的每一行都要在 profile 裡有歸類**——
-   `comm -23 <(那條指令) <(profile 砍掉歸類欄)` **無輸出**。
+4. **指令輸出的每一行都要在盤點區有歸類,且沒有一行的歸類欄是空的**。兩條都跑:
+
+   ```sh
+   cut -f1 <盤點區> > /tmp/classified
+   grep -Fxv -f /tmp/classified <那條指令的輸出>   # 漏歸類的會被印出來
+   awk -F'\t' 'NF < 2 || $2 ~ /^[[:space:]]*$/' <盤點區>   # 空殼歸類會被印出來
+   ```
+
+   **判準是「兩條都無輸出」,不是 exit 0**——`grep` 沒命中時回 1,串成 `&&` 會反過來。
    profile **可以多**(補上清單沒認出來的),**不可以少**。
    (要求兩邊相等會反過來懲罰補漏的人:補一行進去就永遠交不出條件,而唯一走得通的解
-   是把它刪掉。比兩個數字也不算數——兩邊可以填同一個猜的值。)
+   是把它刪掉。`comm` 也不能用:它要求兩邊依同一套 collation 排序,而 `git ls-files`
+   出的是 byte order——不一致時它**不報錯**,直接給錯答案,而錯的方向是把已歸類的
+   誤報成漏掉。第二條擋的是反方向的鑽法:單向包含允許 `git ls-files | sed 's/$/\t—/'`
+   把整個 repo 倒進去,集合條件恆滿足而一行都沒真的歸類。)
 5. `CLAUDE.md` 有指標指向 conf,而且**在 linked worktree 裡也指得到**——git-excluded 的目標
    對隊友、對自己的 worktree 都是懸空指標,而「開了新 worktree」正是這支要服務的情境之一。
 
