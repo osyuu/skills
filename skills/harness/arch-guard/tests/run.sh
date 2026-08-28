@@ -202,8 +202,8 @@ _gateconf() {  # $1=LAYERS  $2=PARTITIONED  $3=CHOKEPOINTS
 _gate() { (cd "$_sb3" && sh hooks/arch-guard-check.sh ${1:+"$1"} 2>&1); }
 _gaterc() { (cd "$_sb3" && sh hooks/arch-guard-check.sh ${1:+"$1"} >/dev/null 2>&1); }
 
-# 判準是**這次執行會不會發出任何一次 git grep**,不是「哪個欄位空著」。三個半邊
-# 各自獨立觸發,所以三個都要有正例(不該開火)與反例(該開火)。
+# 判準是**這次執行會不會發出任何一次 git grep**,不是「哪個欄位空著」——三個半邊
+# 各自獨立觸發。
 _gateconf "" "" ""
 _eo=$(_gate --audit); _gaterc --audit; _erc=$?
 { [ "$_erc" -ne 0 ] && [ -n "$_eo" ]; } \

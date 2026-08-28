@@ -34,23 +34,25 @@ no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該
 # 造一份最小的對話紀錄：一個 user 回合 + 依序的工具呼叫與文字。
 # tools 用 "名稱|指令" 表示，text 用 "T:內容"。
 make_transcript() {
-    out=$1; user=$2; shift 2
-    : > "$out"
-    printf '{"type":"user","promptId":"p1","message":{"content":%s}}\n' \
-        "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$user")" >> "$out"
-    for item in "$@"; do
-        case "$item" in
-            T:*) python3 -c '
-import json,sys
-print(json.dumps({"type":"assistant","message":{"content":[{"type":"text","text":sys.argv[1]}]}}))' "${item#T:}" >> "$out" ;;
-            *) name=${item%%|*}; cmd=${item#*|}
-               python3 -c '
-import json,sys
-inp={"command":sys.argv[2]} if sys.argv[1]=="Bash" else {"file_path":sys.argv[2]}
-print(json.dumps({"type":"assistant","message":{"content":[
-    {"type":"tool_use","name":sys.argv[1],"input":inp}]}}))' "$name" "$cmd" >> "$out" ;;
-        esac
-    done
+    # **整份一次寫完。** 每個 item 各叫一次 python3 的話,61 個 transcript 會攤成
+    # 近 300 次進程啟動,而那幾乎就是這支測試的全部耗時——突變測試再乘 41 倍。
+    out=$1; shift
+    python3 -c '
+import json, sys
+out, user, items = sys.argv[1], sys.argv[2], sys.argv[3:]
+rows = [{"type": "user", "promptId": "p1", "message": {"content": user}}]
+for it in items:
+    if it.startswith("T:"):
+        block = {"type": "text", "text": it[2:]}
+    else:
+        name, _, cmd = it.partition("|")
+        inp = {"command": cmd} if name == "Bash" else {"file_path": cmd}
+        block = {"type": "tool_use", "name": name, "input": inp}
+    rows.append({"type": "assistant", "message": {"content": [block]}})
+with open(out, "w", encoding="utf-8") as fh:
+    for r in rows:
+        fh.write(json.dumps(r) + "\n")
+' "$out" "$@"
 }
 
 run() { python3 "$CHECK" --replay "$1" 2>&1; }

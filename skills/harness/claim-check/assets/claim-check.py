@@ -233,9 +233,8 @@ RULES = [
      "說了有東西在跑，但最近沒有啟動過背景工作或 agent"),
 
     ("測試",
-     # 原本寫成 `all tests pass`,要求 all 與 tests 相鄰,而 agent 報結果最常寫
-     # `all 75 tests pass` ——中間插一個數字就掉了。核心是 `tests <狀態詞>`,
-     # 前面有沒有 all／數量詞都不影響。
+     # 核心是 `tests <狀態詞>`,前面不要求 all——`all 75 tests pass` 這種寫法
+     # (agent 報結果最常見的形狀)中間插著數字,要求相鄰就配不到。
      _re(r"(測試綠|全套測試(都)?(綠|過)|測試通過|全綠|沒有失敗)"
          r"|(?i:\btests? (all )?(pass|passed|passes|passing)\b)"
          r"|(?i:\btests? (are |all )?(green|passing)\b)"
