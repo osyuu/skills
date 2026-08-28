@@ -355,8 +355,27 @@ mk("h27.jsonl", "go", "Edit|/tmp/a.go", "T:Their README claims all tests pass, b
 rep("h27", "h27.jsonl")
 mk("h28.jsonl", "go", "Edit|/tmp/a.go", "T:Each item is pushed to the results array.")
 rep("h28", "h28.jsonl")
-mk("h29.jsonl", "go", "Edit|/tmp/a.go", "T:I committed the work to memory.")
+mk("h29.jsonl", "go", "Edit|/tmp/a.go", "T:I committed the work and moved on.")
 rep("h29", "h29.jsonl")
+
+# 否定的回看範圍分語言且只跨逗號 / 疑問要錨 / 放寬的受詞
+mk("h30.jsonl", "go", "Edit|/tmp/a.dart", "T:並未動到 parser,測試全綠。")
+rep("h30", "h30.jsonl")
+mk("h31.jsonl", "go", "Edit|/tmp/a.go", "T:I did not touch the parser; tests pass.")
+rep("h31", "h31.jsonl")
+mk("h32.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:測試全綠 還要我再跑一次嗎")
+rep("h32", "h32.jsonl")
+mk("h33.jsonl", "go", "Bash|ls", "T:測試還在跑呢")
+rep("h33", "h33.jsonl")
+mk("h34.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:I wrote the fix and tests pass.")
+rep("h34", "h34.jsonl")
+mk("h35.jsonl", "go", "Edit|/tmp/a.go", "T:Every event is pushed to logs/app.log by the writer.")
+rep("h35", "h35.jsonl")
+mk("h36.jsonl", "go", "Edit|/tmp/a.go", "T:I pushed to hotfix2 just now.")
+rep("h36", "h36.jsonl")
+mk("h37.jsonl", "go", "Bash|git push origin main", "Edit|/tmp/a.go",
+   "T:I pushed to hotfix2 just now.")
+rep("h37", "h37.jsonl")
 
 # 被質疑後未查證
 mk("t6.jsonl", "為何要這樣？不對吧", "Bash|grep -n x DualTrackView.swift",
@@ -374,6 +393,43 @@ mk("t9.jsonl", "做吧", "Bash|ls", "T:看了一下，目錄裡沒有那個檔�
 rep("t9", "t9.jsonl")
 Path("t10.jsonl").write_text("")
 rep("t10", "t10.jsonl")
+
+
+def beside_probe(rid, with_override):
+    """conf 放在**腳本自己的上一層**時讀不讀得到。
+
+    兩向都要驗:沒有 CLAIM_CHECK_HOME 時要讀得到(hook 執行期就是這個情況,
+    安裝器寫的那份靠它);有 CLAIM_CHECK_HOME 時**不准**讀(那是測試的隔離,
+    打穿的話測試會讀到真實使用者的 conf——跟 GIT_DIR 是同一個形狀)。
+    """
+    sandbox = Path(OUT).parent
+    fake = Path(sandbox, "fakeinst", "hooks")
+    fake.mkdir(parents=True, exist_ok=True)
+    Path(sandbox, "fakeinst", "claim-check.conf").write_text(
+        "CLAIM_TEST_RE=mix test\n", encoding="utf-8")
+    saved = os.environ.get("CLAIM_CHECK_HOME")
+    empty = Path(sandbox, "emptyhome")
+    empty.mkdir(exist_ok=True)
+    if with_override:
+        os.environ["CLAIM_CHECK_HOME"] = str(empty)
+    else:
+        os.environ.pop("CLAIM_CHECK_HOME", None)
+    try:
+        ns = {"__name__": "cc", "__file__": str(fake / "claim-check.py")}
+        out = io.StringIO()
+        with redirect_stdout(out), redirect_stderr(io.StringIO()):
+            exec(CODE, ns)
+        Path(OUT, rid).write_text(
+            "HIT" if ns["RE_TEST"].search("mix test") else "MISS", encoding="utf-8")
+    finally:
+        if saved is None:
+            os.environ.pop("CLAIM_CHECK_HOME", None)
+        else:
+            os.environ["CLAIM_CHECK_HOME"] = saved
+
+
+beside_probe("b1", False)
+beside_probe("b2", True)
 Path(OUT, ".done").write_text("ok", encoding="utf-8")
 PYEOF
 
@@ -579,7 +635,37 @@ no "轉述他人文件仍不算測試綠" "測試" "$(r h27)"
 
 printf '\npushed to 與 commit 的受詞要收斂\n'
 no "推進陣列不算 commit 宣稱" "版控" "$(r h28)"
-no "committed the work 不算 commit 宣稱" "版控" "$(r h29)"
+# 受詞含 work 是刻意的:`committed the work to memory` 那種誤中
+# 比 `committed the work and moved on` 那種漏抓罕見得多。
+ok "committed the work 算 commit 宣稱" "版控" "$(r h29)"
+
+printf '\n否定的回看範圍分語言,而且只跨逗號\n'
+# 量過:讓否定無條件跨子句會多抑制 58%,而它要抓的形狀在真實語料裡零自然實例。
+# 中文的「A,B」幾乎都是兩個獨立子句,英文的 `not, as you asked, committed` 才是同一句。
+ok "中文否定不得跨逗號吃掉下一個子句" "測試" "$(r h30)"
+ok "英文否定不得跨分號" "測試" "$(r h31)"
+
+printf '\n疑問詞要錨在命中之後\n'
+# 不錨的話這句整條被吃掉,而加個逗號就會開火——差別只在標點。
+ok "命中之後還有別的話就不是問句" "測試" "$(r h32)"
+# `呢` 的非疑問用法比疑問用法常見。
+ok "還在跑呢不是問句" "背景執行" "$(r h33)"
+
+printf '\nwrote 不是 hedge(它跟 after/once 一樣標記完成態)\n'
+ok "wrote 不得吃掉真宣稱" "測試" "$(r h34)"
+
+printf '\npushed to 的受詞\n'
+no "帶副檔名的路徑不算推分支" "版控" "$(r h35)"
+# 沒有斜線的分支名是最常見的形狀。
+ok "裸分支名也算 commit 宣稱" "版控" "$(r h36)"
+# 證據那側:這條規則把 push 當一級宣稱形狀之後,RE_GIT 也要認得 git push,
+# 否則推完再說「pushed to x」會恆誤報。
+no "git push 算證據" "版控" "$(r h37)"
+
+printf '\nconf 放在腳本上一層(hook 執行期沒有環境變數,安裝器寫的那份靠它)\n'
+ok "沒有 CLAIM_CHECK_HOME 時讀得到腳本旁的 conf" "HIT" "$(r b1)"
+# 反向是隔離:打穿的話測試會讀到真實使用者的 conf,跟 GIT_DIR 同形。
+ok "有 CLAIM_CHECK_HOME 時不得讀腳本旁的 conf" "MISS" "$(r b2)"
 
 printf '\n被質疑後未查證\n'
 ok "對沒打開過的檔下結論" "質疑後未查證" "$(r t6)"

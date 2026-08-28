@@ -64,7 +64,7 @@ def _warn(msg):
 
 
 def _conf():
-    """讀覆寫檔:先 repo 的 `hooks/claim-check.conf`,再使用者層的那份。
+    """讀覆寫檔,依序:cwd 的 `hooks/`、腳本自己的上一層、使用者層。先到先得。
 
     格式 `KEY=value`,一行一個,`#` 起頭是註解,` #` 之後是行內註解。
 
@@ -76,9 +76,15 @@ def _conf():
     # **conf 要跟著腳本走。** `CLAIM_CHECK_HOME` 只在安裝期存在,hook 執行期沒有——
     # 裝到非 `~/.claude` 的位置時,安裝器寫的那份 conf 永遠讀不到,而失效方向正是
     # 「宣稱詞表恆不開火」。所以也找腳本自己的上一層。
-    beside = Path(__file__).resolve().parent.parent / "claim-check.conf"
-    home = os.environ.get("CLAIM_CHECK_HOME") or str(Path.home() / ".claude")
-    for path in (Path("hooks/claim-check.conf"), beside, Path(home) / "claim-check.conf"):
+    override = os.environ.get("CLAIM_CHECK_HOME")
+    # `beside` **只在沒有明確覆寫時才找**:它是為了 hook 執行期(那時沒有環境變數)
+    # 而存在的。無條件加進來的話,把 `CLAIM_CHECK_HOME` 指向空目錄的隔離會被它打穿
+    # ——測試改用部署副本時就會讀到真實使用者的 conf,跟 GIT_DIR 是同一個形狀。
+    cands = [Path("hooks/claim-check.conf")]
+    if not override:
+        cands.append(Path(__file__).resolve().parent.parent / "claim-check.conf")
+    cands.append(Path(override or Path.home() / ".claude") / "claim-check.conf")
+    for path in cands:
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
@@ -151,7 +157,8 @@ RE_BUILD = _re(
     # 「build 過」會恆誤報。要治本得把工具鏈移進 per-repo conf,不是把表加長。
     r"|gradlew\s+\S*(?:assemble|bundle)",
     "CLAIM_BUILD_RE")
-RE_GIT = re.compile(r"git (commit|merge)")
+# `git push` 也算:這條規則現在把 `pushed to …` 當一級宣稱形狀,證據那側要跟上。
+RE_GIT = re.compile(r"git (commit|merge|push)")
 # 改動不是只有 Edit/Write。有些 session 明確要求優先用 Bash 改檔（sed -i、heredoc、
 # python3 寫檔），那時只認工具名等於整條「跑完之後有沒有再動過 code」失效——實測一個
 # 全程用 Bash 的 session，7 次「注入故障」開火全是這樣來的誤判。
@@ -264,9 +271,10 @@ RULES = [
      # 與 git 歷史敘述,所以受詞收斂成版控名詞。
      _re(r"(已經? ?commit|commit 了|commit 完|已經? ?merge|merge 完|進版控了)"
          r"|(?i:\b(committed|merged) (it|them|this|that"
-         r"|the (change|changes|fix|fixes|branch|PR|commit|patch))\b)"
-         r"|(?i:\bpushed to (origin|upstream|main|master|develop|HEAD"
-         r"|[\w.-]+/[\w.-]+)\b)"
+         r"|the (change|changes|fix|fixes|branch|PR|commit|patch|work))\b)"
+         r"|(?i:\bpushed to (?!\S*\.\w{1,4}\b)"
+         r"(?!(the|a|an|it|this|that|these|those|its|my|your|our|their)\s)"
+         r"[\w.-]+(/[\w.-]+)?\b)"
          r"|(?i:\bmerged (to|into) (main|develop|master)\b)",
          "CLAIM_COMMITTED_CLAIM_RE"),
      lambda ix: ix["git"] >= 0,
@@ -297,48 +305,60 @@ RULES = [
      "說了注入故障，但沒有『改動 + 跑測試』的組合"),
 ]
 
-# 命中的那一句若是否定、疑問、或在講別人做的事,它就不是宣稱。
-# **兩類的作用範圍不同,合成一類就會二選一地壞掉**:否定類要跨子句(`I have not,
-# as you asked, committed…` 的插入語會把 `not` 切走),條件類不能跨(否則
-# 「如果你想先收工,…:測試全綠」的後半這句真宣稱被吃掉)。
-HEDGE_NEG = re.compile(
-    r"\b(not|never|cannot|can ?not|unable|nothing|none|without)\b|n't"
-    r"|沒有|沒能|不是|還沒|尚未|無法|未能|並未|不會", re.I)
+# 命中的那一句若是否定、疑問、或在講別人做的事,它就不是宣稱。中文靠「已經／了／完」
+# 標記完成態,英文沒有,所以只能反過來排除——這一層存在的理由就是那個不對稱。
+#
+# **否定的回看範圍分語言,而且只跨逗號。** 量過:讓否定無條件跨子句會多抑制 58%
+# (5.5%→8.7%),換到的正例在真實語料裡是 0 ——「A,B」在中文幾乎都是兩個獨立子句
+# (`並未動到 parser,測試全綠`),而英文的 `I have not, as you asked, committed…`
+# 才是被逗號切開的同一個子句。分號、冒號、頓號一律不跨。
+HEDGE_NEG_EN = re.compile(r"\b(not|never|cannot|can ?not|unable|nothing|none|without)\b|n't", re.I)
+HEDGE_NEG_ZH = re.compile(r"沒有|沒能|不是|還沒|尚未|無法|未能|並未|不會")
 HEDGE_COND = re.compile(
     r"\b(if|unless|when|until|whenever|whether|before|should|would|will"
-    r"|hope\w*|need to|make sure|plan(s|ned)? to|wrote|writes"
+    r"|hope\w*|need to|make sure|plan(s|ned)? to"
     r"|asked|upstream|assum(e|ed|es|ing|ption))\b"
     # **連字號也要當詞界**:`\b` 在 `claim-check` 的 `claim` 後面成立,於是這個 skill
-    # 自己的識別字被當成轉述。`said`、`after`、`once` 刻意不收——它們在英文技術敘述裡
-    # 標記的是完成態(「做完之後」「我先前說過」),當 hedge 方向剛好相反。
+    # 自己的識別字被當成轉述。`after`／`once` 不收——它們標記的是完成態(「做完之後」)。
+    # `said` 也不收,但理由不同:`As I said earlier the tests pass` 是**重申自己的宣稱**。
     r"|(?<![-\w])(claims?|says)(?![-\w])"
     r"|如果|是否|要先|之前|打算|預計", re.I)
 CONTRAST = re.compile(r"\b(but|however|although|though)\b|但是|但|不過|然而", re.I)
-QUESTION = re.compile(r"[?？]\s*$|嗎|呢")
+# 疑問詞要求**命中之後只剩它自己**。放寬成「子句裡有就算」的話,
+# 「測試全綠 還要我再跑一次嗎」整條被吃掉——而那個宣稱是斷言了的。
+# `呢` 不收:它的非疑問用法(「測試還在跑呢」)比疑問用法常見。
+TRAILING_Q = re.compile(r"^\s*[了過]?\s*(嗎|吗)[\s)）」』]*[?？]?\s*$|[?？]\s*$")
 SENT_END = re.compile(r"[.!?。！？\n]")
-CLAUSE_END = re.compile(r"[.!?。！？\n,;:，、；：]")
+CLAUSE_END = re.compile(r"[.!?。！？\n,;:|，、；：]")
+COMMA_ONLY = re.compile(r"[,，]")
 
 
-def _is_claim(text, at):
-    """text 的 at 位置命中了某條規則——那一句話是不是一個宣稱。"""
+def _is_claim(text, at, end=None):
+    """text 的 [at, end) 命中了某條規則——那一句話是不是一個宣稱。"""
+    end = at if end is None else end
     sent_start = 0
     for m in SENT_END.finditer(text[:at]):
         sent_start = m.end()
-    sent_end = SENT_END.search(text, at)
     clause_start = sent_start
     for m in CLAUSE_END.finditer(text[sent_start:at]):
         clause_start = sent_start + m.end()
-    clause_end = CLAUSE_END.search(text, at)
-    clause = text[clause_start:clause_end.end() if clause_end else len(text)]
-    # 疑問判定降到**子句**:`Tests pass, should I commit?` 的前半仍是宣稱,
-    # 用整句判會被後面那個問號整條吃掉——而那只取決於打的是逗號還是句號。
-    if QUESTION.search(clause):
+    clause_end = CLAUSE_END.search(text, end)
+    # **從命中的結束位置算起**:從起點算的話命中本身會被包進 tail,
+    # 「測試綠了嗎」的 tail 變成整串,錨就配不到了。
+    tail = text[end:clause_end.end() if clause_end else len(text)]
+    if TRAILING_Q.search(tail):
         return False
-    neg_from = sent_start
-    for m in CONTRAST.finditer(text[sent_start:at]):
-        neg_from = sent_start + m.end()
-    if HEDGE_NEG.search(text[neg_from:at]):
-        return False
+    # 英文否定可以跨逗號,所以起點退到最後一個**非逗號**的邊界。
+    en_start = sent_start
+    for m in CLAUSE_END.finditer(text[sent_start:at]):
+        if not COMMA_ONLY.fullmatch(m.group(0)):
+            en_start = sent_start + m.end()
+    for src, pat in ((en_start, HEDGE_NEG_EN), (clause_start, HEDGE_NEG_ZH)):
+        span = text[src:at]
+        for m in CONTRAST.finditer(span):
+            span = span[m.end():]
+        if pat.search(span):
+            return False
     return not HEDGE_COND.search(text[clause_start:at])
 
 
@@ -381,7 +401,7 @@ def check(events: list, user_text: str) -> list:
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
             hit = next((m for m in pat.finditer(payload)
-                        if _is_claim(payload, m.start())), None)
+                        if _is_claim(payload, m.start(), m.end())), None)
             if hit and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
@@ -489,7 +509,7 @@ def check_scoped(events, cut, user_text):
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
             hit = next((m for m in pat.finditer(payload)
-                        if _is_claim(payload, m.start())), None)
+                        if _is_claim(payload, m.start(), m.end())), None)
             if hit and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
