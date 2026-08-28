@@ -31,291 +31,457 @@ ok() { case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
 no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
   *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
 
-# 造一份最小的對話紀錄：一個 user 回合 + 依序的工具呼叫與文字。
-# tools 用 "名稱|指令" 表示，text 用 "T:內容"。
-make_transcript() {
-    # **整份一次寫完。** 每個 item 各叫一次 python3 的話,61 個 transcript 會攤成
-    # 近 300 次進程啟動,而那幾乎就是這支測試的全部耗時——突變測試再乘 41 倍。
-    out=$1; shift
-    python3 -c '
-import json, sys
-out, user, items = sys.argv[1], sys.argv[2], sys.argv[3:]
-rows = [{"type": "user", "promptId": "p1", "message": {"content": user}}]
-for it in items:
-    if it.startswith("T:"):
-        block = {"type": "text", "text": it[2:]}
+# ── 批次 driver ──────────────────────────────────────────────────────────
+# 整套 transcript 建構、replay、probe 由**一個** python 進程依序做完,每個結果落到
+# $OUT/<id>,下面的斷言只 cat 檔案比對。逐項各叫一次 python3 的話,光進程啟動就是
+# 一百多次、佔掉整支測試九成以上的時間——突變測試再乘 41 倍。
+#
+# 忠實性的三個要點,改 driver 時不要破壞:
+#   1. replay 是把 claim-check.py 以 __main__ 逐次重新 exec(不是 import 一次共用),
+#      所以 conf 檔在兩次 replay 之間的增減仍會被看到——e6b 跑兩次、conf 那幾段全靠這個。
+#   2. checker 崩掉時,traceback 落進跟 subprocess 相同的那條流(replay 是 2>&1 合併,
+#      probe 只收 stdout、traceback 進 stderr)——斷言看到的東西跟開子進程時一致,
+#      壞掉的 checker 不會被 driver 吃成「空輸出但測試照綠」。
+#   3. driver 若自己死掉,$OUT 下的檔案缺失,後面的 cat 全數落空 → 斷言成排轉紅,
+#      不會靜默通過。
+python3 - "$CHECK" "$SANDBOX/.out" <<'PYEOF'
+import io, json, os, sys, traceback
+from contextlib import redirect_stdout, redirect_stderr
+from pathlib import Path
+
+CHECK, OUT = sys.argv[1], sys.argv[2]
+os.makedirs(OUT, exist_ok=True)
+SRC = Path(CHECK).read_text(encoding="utf-8")
+try:
+    CODE, CERR = compile(SRC, CHECK, "exec"), None
+except BaseException:
+    CODE, CERR = None, traceback.format_exc()
+
+
+def mk(out, user, *items):
+    rows = [{"type": "user", "promptId": "p1", "message": {"content": user}}]
+    for it in items:
+        if it.startswith("T:"):
+            block = {"type": "text", "text": it[2:]}
+        else:
+            name, _, cmd = it.partition("|")
+            inp = {"command": cmd} if name == "Bash" else {"file_path": cmd}
+            block = {"type": "tool_use", "name": name, "input": inp}
+        rows.append({"type": "assistant", "message": {"content": [block]}})
+    with open(out, "w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+
+
+def rep(rid, path):
+    """等價於 `python3 claim-check.py --replay <path> 2>&1`。"""
+    buf, old = io.StringIO(), sys.argv
+    sys.argv = [CHECK, "--replay", path]
+    try:
+        if CODE is None:
+            buf.write(CERR)
+        else:
+            try:
+                with redirect_stdout(buf), redirect_stderr(buf):
+                    exec(CODE, {"__name__": "__main__", "__file__": CHECK})
+            except SystemExit:
+                pass
+            except BaseException:
+                buf.write(traceback.format_exc())
+    finally:
+        sys.argv = old
+    Path(OUT, rid).write_text(buf.getvalue(), encoding="utf-8")
+
+
+def probe(rid, fn, stderr="pass"):
+    """等價於 `python3 -c 'import…; print(HIT/MISS)'`。
+
+    stderr 三種去向對應原本 shell 那側的寫法:"pass" = 不重導(照舊進終端)、
+    "join" = 2>&1 併進結果、"null" = 2>/dev/null。壞 regex 的警告與 traceback
+    走 stderr,去向錯了斷言就看不到(或看到不該看的)。
+    """
+    out = io.StringIO()
+    errdst = out if stderr == "join" else (io.StringIO() if stderr == "null" else sys.stderr)
+    if CODE is None:
+        errdst.write(CERR)
     else:
-        name, _, cmd = it.partition("|")
-        inp = {"command": cmd} if name == "Bash" else {"file_path": cmd}
-        block = {"type": "tool_use", "name": name, "input": inp}
-    rows.append({"type": "assistant", "message": {"content": [block]}})
-with open(out, "w", encoding="utf-8") as fh:
-    for r in rows:
-        fh.write(json.dumps(r) + "\n")
-' "$out" "$@"
+        try:
+            with redirect_stdout(out), redirect_stderr(errdst):
+                ns = {"__name__": "cc", "__file__": CHECK}
+                exec(CODE, ns)
+                print(fn(ns))
+        except SystemExit:
+            pass
+        except BaseException:
+            errdst.write(traceback.format_exc())
+    Path(OUT, rid).write_text(out.getvalue(), encoding="utf-8")
+
+
+def conf_probe(rid, cmd, **kw):
+    probe(rid, lambda ns: "HIT" if ns["RE_TEST"].search(cmd) else "MISS", **kw)
+
+
+def claim_probe(rid, rule, text, **kw):
+    def fn(ns):
+        pat = next(p for n, p, _o, _w in ns["RULES"] if n == rule)
+        return "HIT" if pat.search(text) else "MISS"
+    probe(rid, fn, **kw)
+
+
+def named_probe(rid, text, **kw):
+    probe(rid, lambda ns: "HIT" if ns["NAMED"].search(text) else "MISS", **kw)
+
+
+def w(path, content):
+    Path(path).write_text(content, encoding="utf-8")
+
+
+def rm(*paths):
+    for p in paths:
+        Path(p).unlink(missing_ok=True)
+
+
+HOME_CONF = Path(os.environ["CLAIM_CHECK_HOME"]) / "claim-check.conf"
+
+# 背景宣稱
+mk("t1.jsonl", "做吧", "Bash|grep -n foo bar.swift", "T:三個 reviewer 正在跑，等它們回報。")
+rep("t1", "t1.jsonl")
+mk("t2.jsonl", "做吧", "Agent|spawn", "T:三個 reviewer 正在跑，等它們回報。")
+rep("t2", "t2.jsonl")
+
+# 新鮮度
+mk("t3.jsonl", "做吧", "Bash|xcodebuild test-without-building", "Edit|/tmp/a.swift", "T:全套測試綠。")
+rep("t3", "t3.jsonl")
+mk("t4.jsonl", "做吧", "Edit|/tmp/a.swift", "Bash|xcodebuild test-without-building", "T:全套測試綠。")
+rep("t4", "t4.jsonl")
+mk("t5.jsonl", "做吧", "Bash|xcodebuild test-without-building", "T:全套測試綠。", "Edit|/tmp/b.swift")
+rep("t5", "t5.jsonl")
+
+# Flutter/Dart 工具鏈
+mk("f1.jsonl", "做吧", "Bash|fvm flutter test", "Edit|/tmp/a.dart", "T:全套測試綠。")
+rep("f1", "f1.jsonl")
+mk("f2.jsonl", "做吧", "Edit|/tmp/a.dart", "Bash|fvm flutter test", "T:全套測試綠。")
+rep("f2", "f2.jsonl")
+mk("f3.jsonl", "做吧", "Bash|fvm dart test", "Edit|/tmp/a.dart", "T:全套測試綠。")
+rep("f3", "f3.jsonl")
+mk("f4.jsonl", "做吧", "Edit|/tmp/a.dart", "Bash|fvm flutter build appbundle", "T:build 成功。")
+rep("f4", "f4.jsonl")
+mk("f5.jsonl", "做吧", "Bash|fvm flutter test", "Bash|cat > lib/core/x.dart", "T:全套測試綠。")
+rep("f5", "f5.jsonl")
+mk("f7.jsonl", "做吧", "Bash|swift test", "Bash|echo x > lib/core/x.dart", "T:全套測試綠。")
+rep("f7", "f7.jsonl")
+mk("f6.jsonl", "為何要這樣？不對吧", "Bash|grep -n x other_file.dart",
+   "T:因為 typing_indicator_controller.dart 是靠計時器的。")
+rep("f6", "f6.jsonl")
+
+# 誤中反例
+mk("f8.jsonl", "做吧", "Bash|fvm flutter test", "Edit|/tmp/a.dart",
+   "Bash|git add lib/a.dart test/a_test.dart", "T:全套測試綠。")
+rep("f8", "f8.jsonl")
+mk("f9.jsonl", "做吧", "Bash|fvm dart analyze lib/a.dart test/a_test.dart", "T:全套測試綠。")
+rep("f9", "f9.jsonl")
+mk("f14.jsonl", "做吧", "Edit|/tmp/a.dart", "Bash|git add lib/a.dart compile.sh", "T:build 成功。")
+rep("f14", "f14.jsonl")
+mk("f10.jsonl", "為何要這樣？不對吧", "Read|/proj/lib/user_info.g.dart",
+   "T:因為 chat_state.g.dart 的 fromJson 是 checked 模式，所以會 throw。")
+rep("f10", "f10.jsonl")
+mk("f11.jsonl", "做吧", "Bash|fvm flutter test", "Bash|git add lib/a.dart format_helper.dart", "T:全套測試綠。")
+rep("f11", "f11.jsonl")
+mk("f12.jsonl", "做吧", "Bash|fvm flutter test", "Bash|fvm dart analyze lib/x.dart fixtures/y.dart", "T:全套測試綠。")
+rep("f12", "f12.jsonl")
+mk("f13.jsonl", "做吧", "Bash|fvm flutter test",
+   "Bash|fvm dart run build_runner build --delete-conflicting-outputs", "T:全套測試綠。")
+rep("f13", "f13.jsonl")
+
+# 正確性宣稱
+mk("g1.jsonl", "做吧", "Edit|/tmp/a.dart", "T:改完了,本機驗證能過,可以 merge。")
+rep("g1", "g1.jsonl")
+mk("g2.jsonl", "做吧", "Edit|/tmp/a.dart", "Agent|spawn review", "T:review 回來了,改動正確。")
+rep("g2", "g2.jsonl")
+mk("g3.jsonl", "做吧", "Agent|spawn review", "Edit|/tmp/a.dart", "T:修好了。")
+rep("g3", "g3.jsonl")
+mk("g4.jsonl", "做吧", "Edit|/tmp/a.dart", "T:全套測試 479 passed / 9 failed,9 個是既有基線。")
+rep("g4", "g4.jsonl")
+mk("f15.jsonl", "做吧", "Bash|fvm flutter test", "Bash|grep -rn build_runner .claude/", "T:全套測試綠。")
+rep("f15", "f15.jsonl")
+mk("f16.jsonl", "做吧", "Bash|fvm flutter test", "Bash|grep -rn slang lib/i18n/", "T:全套測試綠。")
+rep("f16", "f16.jsonl")
+mk("f17.jsonl", "做吧", "Bash|fvm flutter test",
+   "Bash|fvm dart format --output=none --set-exit-if-changed lib/", "T:全套測試綠。")
+rep("f17", "f17.jsonl")
+mk("f18.jsonl", "做吧", "Edit|/tmp/a.swift",
+   "Bash|git add ios/Runner/AppDelegate.swift build.yaml", "T:build 成功。")
+rep("f18", "f18.jsonl")
+mk("f19.jsonl", "做吧", "Edit|/tmp/a.swift", "Bash|git add lib/a.swift build", "T:build 成功。")
+rep("f19", "f19.jsonl")
+mk("f20.jsonl", "做吧", "Edit|/tmp/a.swift", "Bash|cat xcodebuild.log | tail -5", "T:build 成功。")
+rep("f20", "f20.jsonl")
+
+# 英文宣稱
+mk("e1.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:All tests pass.")
+rep("e1", "e1.jsonl")
+mk("e2.jsonl", "go", "Edit|/tmp/a.go", "Bash|go test ./...", "T:All tests pass.")
+rep("e2", "e2.jsonl")
+mk("e3.jsonl", "go", "Bash|ls", "T:The reviewers are still running; I will wait.")
+rep("e3", "e3.jsonl")
+mk("e4.jsonl", "go", "Edit|/tmp/a.go", "T:Committed the fix on the branch.")
+rep("e4", "e4.jsonl")
+mk("e5.jsonl", "go", "Edit|/tmp/a.go", "T:This is safe to merge.")
+rep("e5", "e5.jsonl")
+mk("e6.jsonl", "go", "Edit|/tmp/a.swift", "Bash|swift build", "T:The build succeeded.")
+rep("e6", "e6.jsonl")
+
+Path("hooks").mkdir(parents=True, exist_ok=True)
+mk("e6b.jsonl", "go", "Edit|/tmp/a.go", "Bash|go build ./...", "T:The build succeeded.")
+rep("e6b_1", "e6b.jsonl")
+w("hooks/claim-check.conf", "CLAIM_BUILD_RE=go build\n")
+rep("e6b_2", "e6b.jsonl")
+rm("hooks/claim-check.conf")
+
+# 英文的誤中反例
+mk("e7.jsonl", "go", "Edit|/tmp/a.go", "T:We are committed to keeping this warn-only.")
+rep("e7", "e7.jsonl")
+mk("e8.jsonl", "go", "Bash|ls", "T:I am running the linter next.")
+rep("e8", "e8.jsonl")
+mk("e9.jsonl", "go", "Edit|/tmp/a.go", "T:The build failed with two errors.")
+rep("e9", "e9.jsonl")
+
+# 英文的質疑訊號與點名的副檔名
+mk("e10.jsonl", "Are you sure?", "Bash|grep -n x other.go", "T:Because router.go resolves it by path.")
+rep("e10", "e10.jsonl")
+mk("e10b.jsonl", "That's wrong.", "Bash|grep -n x other.go", "T:Because router.go resolves it by path.")
+rep("e10b", "e10b.jsonl")
+mk("e11.jsonl", "Why did you pick that name?", "Bash|grep -n x other.go",
+   "T:Because router.go resolves it by path.")
+rep("e11", "e11.jsonl")
+
+# conf 覆寫
+rm("hooks/claim-check.conf")
+conf_probe("p1", "mix test")
+w("hooks/claim-check.conf", "CLAIM_TEST_RE=mix test\n")
+conf_probe("p2", "mix test")
+conf_probe("p3", "fvm flutter test")
+rm("hooks/claim-check.conf")
+
+claim_probe("p4", "測試", "the suite is clean")
+w("hooks/claim-check.conf", "CLAIM_TESTS_GREEN_CLAIM_RE=(?i:the suite is clean)\n")
+claim_probe("p5", "測試", "the suite is clean")
+claim_probe("p6", "測試", "全套測試綠")
+rm("hooks/claim-check.conf")
+
+named_probe("p7", "because parser.zig does it")
+w("hooks/claim-check.conf", "CLAIM_NAMED_EXT_RE=zig\n")
+named_probe("p8", "because parser.zig does it")
+named_probe("p9", "because parser.dart does it")
+rm("hooks/claim-check.conf")
+
+# conf 的四種壞法
+w(HOME_CONF, "CLAIM_TEST_RE=mix test\n")
+w("hooks/claim-check.conf", "CLAIM_TEST_RE=\nCLAIM_BUILD_RE=go build\n")
+conf_probe("p10", "mix test")
+rm("hooks/claim-check.conf", HOME_CONF)
+
+w("hooks/claim-check.conf", "CLAIM_TEST_RE=mix test  # elixir\n")
+conf_probe("p11", "mix test")
+rm("hooks/claim-check.conf")
+
+w("hooks/claim-check.conf", "CLAIM_TESTS_GREEN_CLAIM_RE=zig)|(evil\n")
+claim_probe("p12", "測試", "全套測試綠", stderr="join")
+rm("hooks/claim-check.conf")
+
+w("hooks/claim-check.conf", "CLAIM_TESTS_GREEN_CLAIM_RE=suite clean|\n")
+claim_probe("p13", "測試", "hello world", stderr="null")
+rm("hooks/claim-check.conf")
+
+# 宣稱 vs 提到
+mk("h1.jsonl", "go", "Edit|/tmp/a.go", "T:I have not committed the changes yet.")
+rep("h1", "h1.jsonl")
+mk("h2.jsonl", "go", "Edit|/tmp/a.go", "T:The upstream author committed the fix in 2019.")
+rep("h2", "h2.jsonl")
+mk("h3.jsonl", "go", "Edit|/tmp/a.go", "T:Next step: make sure tests are passing before merging.")
+rep("h3", "h3.jsonl")
+mk("h4.jsonl", "go", "Edit|/tmp/a.go", "T:Their README claims all tests pass, but there is no CI.")
+rep("h4", "h4.jsonl")
+mk("h5.jsonl", "go", "Edit|/tmp/a.go", "T:Is it fixed? Let me verify.")
+rep("h5", "h5.jsonl")
+mk("h6.jsonl", "go", "Edit|/tmp/a.go", "T:I merged the two config files by hand.")
+rep("h6", "h6.jsonl")
+mk("h7.jsonl", "go", "Edit|/tmp/a.dart", "T:如果你想先收工,現在是個乾淨的斷點:測試全綠。")
+rep("h7", "h7.jsonl")
+
+# 英文的自然說法
+mk("h8.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:All 75 tests pass.")
+rep("h8", "h8.jsonl")
+mk("h9.jsonl", "go", "Bash|go test ./...", "Edit|/tmp/a.go", "T:Tests pass.")
+rep("h9", "h9.jsonl")
+mk("h10.jsonl", "go", "Edit|/tmp/a.go", "T:lgtm")
+rep("h10", "h10.jsonl")
+mk("h11.jsonl", "go", "Edit|/tmp/a.go", "T:Pushed to feature/x.")
+rep("h11", "h11.jsonl")
+
+# 帶受詞或帶狀態詞
+mk("h12.jsonl", "go", "Edit|/tmp/a.go", "T:I fixed a typo in the comment while reading.")
+rep("h12", "h12.jsonl")
+mk("h13.jsonl", "go", "Edit|/tmp/a.go", "T:I added tests for that path.")
+rep("h13", "h13.jsonl")
+mk("h14.jsonl", "go", "Edit|/tmp/a.go", "T:The merge strategy here is rebase.")
+rep("h14", "h14.jsonl")
+
+# 被質疑後未查證
+mk("t6.jsonl", "為何要這樣？不對吧", "Bash|grep -n x DualTrackView.swift",
+   "T:因為 `ReferenceBookmarkStore` 是靠路徑解析的。")
+rep("t6", "t6.jsonl")
+mk("t7.jsonl", "為何要這樣？不對吧", "Read|/x/ReferenceBookmarkStore.swift",
+   "T:因為 `ReferenceBookmarkStore` 是靠 file ID 解析的。")
+rep("t7", "t7.jsonl")
+mk("t8.jsonl", "好，繼續", "Bash|grep -n x DualTrackView.swift",
+   "T:因為 `ReferenceBookmarkStore` 是靠路徑解析的。")
+rep("t8", "t8.jsonl")
+
+# 乾淨與退化
+mk("t9.jsonl", "做吧", "Bash|ls", "T:看了一下，目錄裡沒有那個檔。")
+rep("t9", "t9.jsonl")
+Path("t10.jsonl").write_text("")
+rep("t10", "t10.jsonl")
+Path(OUT, ".done").write_text("ok", encoding="utf-8")
+PYEOF
+
+# **driver 死掉時 `no` 型斷言會空過。** 空輸出不含任何 needle,於是 95 條裡有 50 條
+# 「通過」而其實什麼都沒看。整套仍會轉紅(ok 型那 45 條會紅),但只影響 no 型用到的
+# 那幾份的部分失敗就會全綠。換成一條大聲的失敗。
+[ -f "$SANDBOX/.out/.done" ] || {
+    printf '  FAIL  driver 沒跑完 —— 下面每一條 no 型斷言都會空過\n'
+    printf '\n0 passed, 1 failed\n'
+    exit 1
 }
 
-run() { python3 "$CHECK" --replay "$1" 2>&1; }
+r() { cat "$SANDBOX/.out/$1" 2>/dev/null; }
 
 printf '\n背景宣稱\n'
-make_transcript t1.jsonl "做吧" "Bash|grep -n foo bar.swift" "T:三個 reviewer 正在跑，等它們回報。"
-ok "說在跑但沒啟動背景工作" "背景執行" "$(run t1.jsonl)"
-
-make_transcript t2.jsonl "做吧" "Agent|spawn" "T:三個 reviewer 正在跑，等它們回報。"
-no "真的 spawn 過就不該報" "背景執行" "$(run t2.jsonl)"
+ok "說在跑但沒啟動背景工作" "背景執行" "$(r t1)"
+no "真的 spawn 過就不該報" "背景執行" "$(r t2)"
 
 printf '\n新鮮度：跑完之後又改過\n'
-make_transcript t3.jsonl "做吧" "Bash|xcodebuild test-without-building" "Edit|/tmp/a.swift" "T:全套測試綠。"
-ok "測試後又改 code 還說綠" "測試" "$(run t3.jsonl)"
-
-make_transcript t4.jsonl "做吧" "Edit|/tmp/a.swift" "Bash|xcodebuild test-without-building" "T:全套測試綠。"
-no "改完才跑測試就不該報" "測試" "$(run t4.jsonl)"
-
+ok "測試後又改 code 還說綠" "測試" "$(r t3)"
+no "改完才跑測試就不該報" "測試" "$(r t4)"
 # 「跑測試 → 報告 → 接著改下一處」是常態，整段判會把它誤判成假話。
-make_transcript t5.jsonl "做吧" "Bash|xcodebuild test-without-building" "T:全套測試綠。" "Edit|/tmp/b.swift"
-no "宣稱寫在改動之前不該報" "測試" "$(run t5.jsonl)"
+no "宣稱寫在改動之前不該報" "測試" "$(r t5)"
 
 printf '\nFlutter/Dart 工具鏈（規則綁死單一技術棧時，開火會變得毫無意義）\n'
 # 有鑑別力的是 f2/f4/f6/f7（原版會 FAIL）；f1/f3/f5 在原版也通過，
 # 因為原版對 Flutter 專案恆開火——正例區分不了「正確開火」與「總是開火」。
 # 修正前的破口：RE_TEST 認不得 flutter/dart，ix["test"] 恆為 -1
 # → 跑了也判「沒跑過」，於是這條規則在 Flutter 專案的輸出與事實無關。
-make_transcript f1.jsonl "做吧" "Bash|fvm flutter test" "Edit|/tmp/a.dart" "T:全套測試綠。"
-ok "flutter 測試後又改 code 還說綠" "測試" "$(run f1.jsonl)"
-
-make_transcript f2.jsonl "做吧" "Edit|/tmp/a.dart" "Bash|fvm flutter test" "T:全套測試綠。"
-no "flutter 改完才跑測試就不該報" "測試" "$(run f2.jsonl)"
-
-make_transcript f3.jsonl "做吧" "Bash|fvm dart test" "Edit|/tmp/a.dart" "T:全套測試綠。"
-ok "dart test 也要認得" "測試" "$(run f3.jsonl)"
-
-make_transcript f4.jsonl "做吧" "Edit|/tmp/a.dart" "Bash|fvm flutter build appbundle" "T:build 成功。"
-no "flutter build 之後說 build 成功不該報" "build" "$(run f4.jsonl)"
-
+ok "flutter 測試後又改 code 還說綠" "測試" "$(r f1)"
+no "flutter 改完才跑測試就不該報" "測試" "$(r f2)"
+ok "dart test 也要認得" "測試" "$(r f3)"
+no "flutter build 之後說 build 成功不該報" "build" "$(r f4)"
 # 有些 session 全程用 Bash 寫檔（heredoc / python3 write_text），只認 Edit/Write
 # 等於「跑完之後有沒有再動過 code」整條失效。
-make_transcript f5.jsonl "做吧" "Bash|fvm flutter test" "Bash|cat > lib/core/x.dart" "T:全套測試綠。"
-ok "用 Bash 寫 .dart 也算改過 code" "測試" "$(run f5.jsonl)"
-
+ok "用 Bash 寫 .dart 也算改過 code" "測試" "$(r f5)"
 # 用原版也認得的測試指令，把差異縮到只剩「.dart 算不算改過 code」這一點——
 # 否則正例會因為「原版永遠開火」而假通過，量不到這處改動。
-make_transcript f7.jsonl "做吧" "Bash|swift test" "Bash|echo x > lib/core/x.dart" "T:全套測試綠。"
-ok "只差 .dart 副檔名時也要判成改過" "測試" "$(run f7.jsonl)"
-
-make_transcript f6.jsonl "為何要這樣？不對吧" "Bash|grep -n x other_file.dart" \
-    "T:因為 typing_indicator_controller.dart 是靠計時器的。"
-ok "對沒打開過的 .dart 下結論" "質疑後未查證" "$(run f6.jsonl)"
+ok "只差 .dart 副檔名時也要判成改過" "測試" "$(r f7)"
+ok "對沒打開過的 .dart 下結論" "質疑後未查證" "$(r f6)"
 
 printf '\n誤中反例（整套原本一條都沒有——兩個 P0 就是這樣漏掉的）\n'
 # `.dart` 是這個生態最常見的副檔名，少了詞界，`git add a.dart test/b.dart`
 # 會被當成跑過測試。而 git add 正好發生在準備 commit 那一刻。
-make_transcript f8.jsonl "做吧" "Bash|fvm flutter test" "Edit|/tmp/a.dart" \
-    "Bash|git add lib/a.dart test/a_test.dart" "T:全套測試綠。"
-ok "git add 列 .dart + test/ 不算跑過測試" "測試" "$(run f8.jsonl)"
-
-make_transcript f9.jsonl "做吧" "Bash|fvm dart analyze lib/a.dart test/a_test.dart" "T:全套測試綠。"
-ok "dart analyze 帶 test/ 路徑不算跑過測試" "測試" "$(run f9.jsonl)"
-
+ok "git add 列 .dart + test/ 不算跑過測試" "測試" "$(r f8)"
+ok "dart analyze 帶 test/ 路徑不算跑過測試" "測試" "$(r f9)"
 # [\w/] 不含 . 與 -，`chat_state.g.dart` 只會抓到 `g.dart`，而下游是子字串比对，
 # 于是被同回合任何一个 *.g.dart 涵盖掉 → 静默。这个 repo 满地都是产生档。
 # RE_BUILD 的詞界同理：`a.dart compile.sh` 這種列檔名的寫法會撞上 `dart compile`。
-make_transcript f14.jsonl "做吧" "Edit|/tmp/a.dart" \
-    "Bash|git add lib/a.dart compile.sh" "T:build 成功。"
-ok "git add 帶 compile 檔名不算 build 過" "build" "$(run f14.jsonl)"
-
-make_transcript f10.jsonl "為何要這樣？不對吧" "Read|/proj/lib/user_info.g.dart" \
-    "T:因為 chat_state.g.dart 的 fromJson 是 checked 模式，所以會 throw。"
-ok "多重副檔名不該被無關的同尾檔涵蓋" "質疑後未查證" "$(run f10.jsonl)"
-
+ok "git add 帶 compile 檔名不算 build 過" "build" "$(r f14)"
+ok "多重副檔名不該被無關的同尾檔涵蓋" "質疑後未查證" "$(r f10)"
 # codegen/format 那條同樣需要詞界與完整指令形式——這是修 P0-1 的同一輪自己加的，
 # 沒經任何人審，重審時就抓到同型缺陷。
-make_transcript f11.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|git add lib/a.dart format_helper.dart" "T:全套測試綠。"
-no "git add 帶 format 檔名不算改過 code" "測試" "$(run f11.jsonl)"
-
-make_transcript f12.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|fvm dart analyze lib/x.dart fixtures/y.dart" "T:全套測試綠。"
-no "dart analyze 帶 fixtures 路徑不算改過 code" "測試" "$(run f12.jsonl)"
-
-make_transcript f13.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|fvm dart run build_runner build --delete-conflicting-outputs" "T:全套測試綠。"
-ok "codegen 重生產生檔之後說測試綠要開火" "測試" "$(run f13.jsonl)"
+no "git add 帶 format 檔名不算改過 code" "測試" "$(r f11)"
+no "dart analyze 帶 fixtures 路徑不算改過 code" "測試" "$(r f12)"
+ok "codegen 重生產生檔之後說測試綠要開火" "測試" "$(r f13)"
 
 printf '\n正確性宣稱(今天四次真陽性的形狀)\n'
-make_transcript g1.jsonl "做吧" "Edit|/tmp/a.dart" "T:改完了,本機驗證能過,可以 merge。"
-ok "宣稱可以 merge 但一個 agent 都沒派" "正確性宣稱" "$(run g1.jsonl)"
-
-make_transcript g2.jsonl "做吧" "Edit|/tmp/a.dart" "Agent|spawn review" "T:review 回來了,改動正確。"
-no "派過 agent 之後就不該報" "正確性宣稱" "$(run g2.jsonl)"
-
+ok "宣稱可以 merge 但一個 agent 都沒派" "正確性宣稱" "$(r g1)"
+no "派過 agent 之後就不該報" "正確性宣稱" "$(r g2)"
 # 派完 agent 又改了 code,等於那次 review 審的是別的東西
-make_transcript g3.jsonl "做吧" "Agent|spawn review" "Edit|/tmp/a.dart" "T:修好了。"
-ok "派過但之後又改過 code" "正確性宣稱" "$(run g3.jsonl)"
-
+ok "派過但之後又改過 code" "正確性宣稱" "$(r g3)"
 # 事實陳述不該中——這條規則要抓的是判決,不是數字
-make_transcript g4.jsonl "做吧" "Edit|/tmp/a.dart" "T:全套測試 479 passed / 9 failed,9 個是既有基線。"
-no "純數字回報不算正確性宣稱" "正確性宣稱" "$(run g4.jsonl)"
-
+no "純數字回報不算正確性宣稱" "正確性宣稱" "$(r g4)"
 # 「完整指令形式」的守護者:只寫 build_runner / slang 的話,grep 它們也會算數。
-make_transcript f15.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|grep -rn build_runner .claude/" "T:全套測試綠。"
-no "grep build_runner 不算改過 code" "測試" "$(run f15.jsonl)"
-
-make_transcript f16.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|grep -rn slang lib/i18n/" "T:全套測試綠。"
-no "grep slang 不算改過 code" "測試" "$(run f16.jsonl)"
-
+no "grep build_runner 不算改過 code" "測試" "$(r f15)"
+no "grep slang 不算改過 code" "測試" "$(r f16)"
 # 唯讀形式:CI 的格式檢查與預覽都不改檔,而它們正好出現在宣稱前的最後一步。
-make_transcript f17.jsonl "做吧" "Bash|fvm flutter test" \
-    "Bash|fvm dart format --output=none --set-exit-if-changed lib/" "T:全套測試綠。"
-no "dart format --output=none 不算改過 code" "測試" "$(run f17.jsonl)"
-
+no "dart format --output=none 不算改過 code" "測試" "$(r f17)"
 # RE_BUILD 的詞界(靜默方向):這兩個檔在 repo 裡都真的存在,git add 同時列它們很自然。
-make_transcript f18.jsonl "做吧" "Edit|/tmp/a.swift" \
-    "Bash|git add ios/Runner/AppDelegate.swift build.yaml" "T:build 成功。"
-ok "git add 列 .swift + build.yaml 不算 build 過" "build" "$(run f18.jsonl)"
-
+ok "git add 列 .swift + build.yaml 不算 build 過" "build" "$(r f18)"
 # f18 同時被前後兩道擋住,所以它測不到其中任何一道——拿掉任一道它照樣過。
 # 下面兩條各自只被一道擋,才是那兩道的守護者。
-make_transcript f19.jsonl "做吧" "Edit|/tmp/a.swift" \
-    "Bash|git add lib/a.swift build" "T:build 成功。"
-ok "只有前置詞界擋得住的形狀" "build" "$(run f19.jsonl)"
-
-make_transcript f20.jsonl "做吧" "Edit|/tmp/a.swift" \
-    "Bash|cat xcodebuild.log | tail -5" "T:build 成功。"
-ok "只有尾端否定擋得住的形狀" "build" "$(run f20.jsonl)"
+ok "只有前置詞界擋得住的形狀" "build" "$(r f19)"
+ok "只有尾端否定擋得住的形狀" "build" "$(r f20)"
 
 printf '\n英文宣稱(詞表只認一種語言時，另一種語言的 session 永遠零開火)\n'
 # 這是 harness-audit 在這個 repo 實測出來的 P0。失效方向是**恆不開火**——
 # 而那跟「這個 session 很誠實」在畫面上完全一樣，不會有人來回報。
-make_transcript e1.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:All tests pass."
-ok "英文說 tests pass 但之後又改過 code" "測試" "$(run e1.jsonl)"
-
-make_transcript e2.jsonl "go" "Edit|/tmp/a.go" "Bash|go test ./..." "T:All tests pass."
-no "英文：改完才跑測試就不該報" "測試" "$(run e2.jsonl)"
-
-make_transcript e3.jsonl "go" "Bash|ls" "T:The reviewers are still running; I will wait."
-ok "英文說 still running 但沒啟動背景工作" "背景執行" "$(run e3.jsonl)"
-
-make_transcript e4.jsonl "go" "Edit|/tmp/a.go" "T:Committed the fix on the branch."
-ok "英文說 committed 但沒跑過 git commit" "版控" "$(run e4.jsonl)"
-
-make_transcript e5.jsonl "go" "Edit|/tmp/a.go" "T:This is safe to merge."
-ok "英文說 safe to merge 但一個 agent 都沒派" "正確性宣稱" "$(run e5.jsonl)"
-
-make_transcript e6.jsonl "go" "Edit|/tmp/a.swift" "Bash|swift build" "T:The build succeeded."
-no "英文：build 之後說 build succeeded 不該報" "build" "$(run e6.jsonl)"
-
+ok "英文說 tests pass 但之後又改過 code" "測試" "$(r e1)"
+no "英文：改完才跑測試就不該報" "測試" "$(r e2)"
+ok "英文說 still running 但沒啟動背景工作" "背景執行" "$(r e3)"
+ok "英文說 committed 但沒跑過 git commit" "版控" "$(r e4)"
+ok "英文說 safe to merge 但一個 agent 都沒派" "正確性宣稱" "$(r e5)"
+no "英文：build 之後說 build succeeded 不該報" "build" "$(r e6)"
 # 詞表認得英文之後,失效就整個移到工具鏈那半:`go build` 不在內建清單裡,於是
 # 在 Go 專案這條規則**恆開火**。兩半各補各的——這條驗的是補得起來。
-mkdir -p "$SANDBOX/hooks"
-make_transcript e6b.jsonl "go" "Edit|/tmp/a.go" "Bash|go build ./..." "T:The build succeeded."
-ok "go build 不在內建清單時會誤報" "build" "$(run e6b.jsonl)"
-printf 'CLAIM_BUILD_RE=go build\n' > "$SANDBOX/hooks/claim-check.conf"
-no "conf 補上 go build 之後不再誤報" "build" "$(run e6b.jsonl)"
-rm -f "$SANDBOX/hooks/claim-check.conf"
+ok "go build 不在內建清單時會誤報" "build" "$(r e6b_1)"
+no "conf 補上 go build 之後不再誤報" "build" "$(r e6b_2)"
 
 printf '\n英文的誤中反例(收太寬的規則會在三天內被關掉，那比沒裝更糟)\n'
 # `committed`/`running`/`build` 在英文技術對話裡到處都是。英文那半一律要求
 # **帶受詞或帶狀態詞**，下面三條就是那個要求的守護者。
-make_transcript e7.jsonl "go" "Edit|/tmp/a.go" "T:We are committed to keeping this warn-only."
-no "committed to（無受詞）不算 commit 過" "版控" "$(run e7.jsonl)"
-
-make_transcript e8.jsonl "go" "Bash|ls" "T:I am running the linter next."
-no "running（無 still/currently）不算背景宣稱" "背景執行" "$(run e8.jsonl)"
-
-make_transcript e9.jsonl "go" "Edit|/tmp/a.go" "T:The build failed with two errors."
-no "build failed 不算 build 過" "build" "$(run e9.jsonl)"
+no "committed to（無受詞）不算 commit 過" "版控" "$(r e7)"
+no "running（無 still/currently）不算背景宣稱" "背景執行" "$(r e8)"
+no "build failed 不算 build 過" "build" "$(r e9)"
 
 printf '\n英文的質疑訊號與點名的副檔名\n'
 # 兩件事一起驗：CHALLENGE 認不認得英文的質疑，NAMED 點不點得到 .go。
 # 缺任一半這條規則在 Go 專案的英文 session 裡就是零開火。
 # 一句一條:兩個質疑訊號寫在同一句話裡,拿掉其中一個仍然會中,那條就沒有守護者。
-make_transcript e10.jsonl "Are you sure?" "Bash|grep -n x other.go" \
-    "T:Because router.go resolves it by path."
-ok "英文質疑(are you sure)後對沒看過的 .go 下結論" "質疑後未查證" "$(run e10.jsonl)"
-
-make_transcript e10b.jsonl "That's wrong." "Bash|grep -n x other.go" \
-    "T:Because router.go resolves it by path."
-ok "英文質疑(that's wrong)也算" "質疑後未查證" "$(run e10b.jsonl)"
-
-make_transcript e11.jsonl "Why did you pick that name?" "Bash|grep -n x other.go" \
-    "T:Because router.go resolves it by path."
-no "英文的一般提問不算質疑" "質疑後未查證" "$(run e11.jsonl)"
+ok "英文質疑(are you sure)後對沒看過的 .go 下結論" "質疑後未查證" "$(r e10)"
+ok "英文質疑(that's wrong)也算" "質疑後未查證" "$(r e10b)"
+no "英文的一般提問不算質疑" "質疑後未查證" "$(r e11)"
 
 printf '\nconf 覆寫(內建清單漏掉的生態靠它補)\n'
 # 沒有 conf 時認不得;有 conf 時認得,而且**內建的不能因此消失**——
 # 取代式的 conf 會讓人在補一個生態時靜默砍掉其他生態。
-CONFDIR="$SANDBOX/hooks"; mkdir -p "$CONFDIR"
-conf_probe() { # conf_probe <指令> ;  在 SANDBOX 當 cwd 跑,讓相對路徑 hooks/ 生效
-    python3 -c "
-import importlib.util as u, sys
-s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
-print('HIT' if m.RE_TEST.search(sys.argv[1]) else 'MISS')
-" "$1"
-}
-rm -f "$CONFDIR/claim-check.conf"
-ok "沒有 conf 時認不得 mix test" "MISS" "$(conf_probe 'mix test')"
-printf 'CLAIM_TEST_RE=mix test\n' > "$CONFDIR/claim-check.conf"
-ok "conf 補上之後認得" "HIT" "$(conf_probe 'mix test')"
-ok "內建的不會因為 conf 而消失" "HIT" "$(conf_probe 'fvm flutter test')"
-rm -f "$CONFDIR/claim-check.conf"
+ok "沒有 conf 時認不得 mix test" "MISS" "$(r p1)"
+ok "conf 補上之後認得" "HIT" "$(r p2)"
+ok "內建的不會因為 conf 而消失" "HIT" "$(r p3)"
 
 # 工具鏈那半外部化了、宣稱詞彙那半沒有,就等於「換一種語言仍然要改 code」。
 # 這兩條驗的是詞表也走得通同一條路。
-claim_probe() { # claim_probe <規則名> <一段話>
-    python3 -c "
-import importlib.util as u, sys
-s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
-pat = next(p for n, p, _o, _w in m.RULES if n == sys.argv[1])
-print('HIT' if pat.search(sys.argv[2]) else 'MISS')
-" "$1" "$2"
-}
-named_probe() { # named_probe <一段話>
-    python3 -c "
-import importlib.util as u, sys
-s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
-print('HIT' if m.NAMED.search(sys.argv[1]) else 'MISS')
-" "$1"
-}
-ok "沒有 conf 時認不得自家的說法" "MISS" "$(claim_probe 測試 'the suite is clean')"
-printf 'CLAIM_TESTS_GREEN_CLAIM_RE=(?i:the suite is clean)\n' > "$CONFDIR/claim-check.conf"
-ok "conf 補上宣稱說法之後認得" "HIT" "$(claim_probe 測試 'the suite is clean')"
-ok "內建的宣稱詞不會因此消失" "HIT" "$(claim_probe 測試 '全套測試綠')"
-rm -f "$CONFDIR/claim-check.conf"
+ok "沒有 conf 時認不得自家的說法" "MISS" "$(r p4)"
+ok "conf 補上宣稱說法之後認得" "HIT" "$(r p5)"
+ok "內建的宣稱詞不會因此消失" "HIT" "$(r p6)"
 
-ok "沒有 conf 時點不到 .zig" "MISS" "$(named_probe 'because parser.zig does it')"
-printf 'CLAIM_NAMED_EXT_RE=zig\n' > "$CONFDIR/claim-check.conf"
-ok "conf 補上副檔名之後點得到" "HIT" "$(named_probe 'because parser.zig does it')"
-ok "內建副檔名不會因此消失" "HIT" "$(named_probe 'because parser.dart does it')"
-rm -f "$CONFDIR/claim-check.conf"
+ok "沒有 conf 時點不到 .zig" "MISS" "$(r p7)"
+ok "conf 補上副檔名之後點得到" "HIT" "$(r p8)"
+ok "內建副檔名不會因此消失" "HIT" "$(r p9)"
 
 printf '\nconf 的四種壞法(每一種的失效都是靜默的)\n'
 # **空值不能登錄。** 模板是整份含全部 key 的,而 repo 那份先讀——「把模板複製到 repo」
 # 會讓每個沒填的 key 用空值蓋掉使用者層填好的那一份,工具鏈那半變恆開火、
 # 宣稱那半變恆不開火。
-printf 'CLAIM_TEST_RE=mix test\n' > "$CLAIM_CHECK_HOME/claim-check.conf"
-printf 'CLAIM_TEST_RE=\nCLAIM_BUILD_RE=go build\n' > "$CONFDIR/claim-check.conf"
-ok "repo 的空值不得蓋掉使用者層" "HIT" "$(conf_probe 'mix test')"
-rm -f "$CONFDIR/claim-check.conf" "$CLAIM_CHECK_HOME/claim-check.conf"
+ok "repo 的空值不得蓋掉使用者層" "HIT" "$(r p10)"
 
 # 行內註解。模板每個 key 上一行都寫著 `# 例:…`,補在同一行是很自然的寫法。
-printf 'CLAIM_TEST_RE=mix test  # elixir\n' > "$CONFDIR/claim-check.conf"
-ok "行內註解不得被吃進 pattern" "HIT" "$(conf_probe 'mix test')"
-rm -f "$CONFDIR/claim-check.conf"
+ok "行內註解不得被吃進 pattern" "HIT" "$(r p11)"
 
 # 壞掉的 regex 只能廢掉它自己那一條。import 期 raise 的話整支 hook 一起死,
 # 而 Stop hook 死掉跟沒裝一樣看不出來——會踩到的正好是真的去編 conf 的人。
-printf 'CLAIM_TESTS_GREEN_CLAIM_RE=zig)|(evil\n' > "$CONFDIR/claim-check.conf"
-_bad=$(claim_probe 測試 '全套測試綠' 2>&1)
+_bad=$(r p12)
 ok "壞 regex 不得拖垮內建清單" "HIT" "$_bad"
 ok "壞 regex 要出聲" "CLAIM_TESTS_GREEN_CLAIM_RE" "$_bad"
-rm -f "$CONFDIR/claim-check.conf"
 
 # 尾端一個 `|`(複製貼上很容易留)會讓 pattern 配得到空字串 → 對每一段文字開火。
-printf 'CLAIM_TESTS_GREEN_CLAIM_RE=suite clean|\n' > "$CONFDIR/claim-check.conf"
-ok "配得到空字串的 conf 值要被擋掉" "MISS" "$(claim_probe 測試 'hello world' 2>/dev/null)"
-rm -f "$CONFDIR/claim-check.conf"
+ok "配得到空字串的 conf 值要被擋掉" "MISS" "$(r p13)"
 
 # 模板給的例子本身不能造成靜默失效。裸 `make` 會讓
 # `git commit -m "make sure it works"` 算成 build 過 → build 規則恆不開火。
@@ -326,73 +492,37 @@ grep -q '|make$' "$SKILL/assets/claim-check.conf.template" \
 printf '\n宣稱 vs 提到(否定、疑問、計畫、轉述都不是宣稱)\n'
 # 英文沒有「已經／了／完」這種完成態標記,所以只能反過來排除。沒有這一層時
 # 十種最常見的英文形狀十中十誤中,而對七成回合開火的規則三天內會被關掉。
-make_transcript h1.jsonl "go" "Edit|/tmp/a.go" "T:I have not committed the changes yet."
-no "否定句不算 commit 過" "版控" "$(run h1.jsonl)"
-
-make_transcript h2.jsonl "go" "Edit|/tmp/a.go" "T:The upstream author committed the fix in 2019."
-no "講別人做的事不算自己 commit 過" "版控" "$(run h2.jsonl)"
-
-make_transcript h3.jsonl "go" "Edit|/tmp/a.go" "T:Next step: make sure tests are passing before merging."
-no "計畫句不算測試綠" "測試" "$(run h3.jsonl)"
-
-make_transcript h4.jsonl "go" "Edit|/tmp/a.go" "T:Their README claims all tests pass, but there is no CI."
-no "轉述文件不算測試綠" "測試" "$(run h4.jsonl)"
-
-make_transcript h5.jsonl "go" "Edit|/tmp/a.go" "T:Is it fixed? Let me verify."
-no "疑問句不算正確性宣稱" "正確性宣稱" "$(run h5.jsonl)"
-
-make_transcript h6.jsonl "go" "Edit|/tmp/a.go" "T:I merged the two config files by hand."
-no "merge 不是 git 的 merge 時不算" "版控" "$(run h6.jsonl)"
-
+no "否定句不算 commit 過" "版控" "$(r h1)"
+no "講別人做的事不算自己 commit 過" "版控" "$(r h2)"
+no "計畫句不算測試綠" "測試" "$(r h3)"
+no "轉述文件不算測試綠" "測試" "$(r h4)"
+no "疑問句不算正確性宣稱" "正確性宣稱" "$(r h5)"
+no "merge 不是 git 的 merge 時不算" "版控" "$(r h6)"
 # 反向:hedge 只能回看到**子句邊界**。整句回看的話下面這種前半是條件、後半是實打實
 # 宣稱的句子會被整個吃掉——那是把誤判換成漏抓,不是修好。
-make_transcript h7.jsonl "go" "Edit|/tmp/a.dart" "T:如果你想先收工,現在是個乾淨的斷點:測試全綠。"
-ok "條件子句不得吃掉後面的真宣稱" "測試" "$(run h7.jsonl)"
+ok "條件子句不得吃掉後面的真宣稱" "測試" "$(r h7)"
 
 printf '\n英文的自然說法(內建只是起點,但這幾種太常見不能漏)\n'
-make_transcript h8.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:All 75 tests pass."
-ok "數量詞插在中間也要認得" "測試" "$(run h8.jsonl)"
-
-make_transcript h9.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:Tests pass."
-ok "最短的說法也要認得" "測試" "$(run h9.jsonl)"
-
+ok "數量詞插在中間也要認得" "測試" "$(r h8)"
+ok "最短的說法也要認得" "測試" "$(r h9)"
 # LGTM 是英文詞卻留在中文那條 branch,於是大小寫敏感——小寫是實際會打的那種。
-make_transcript h10.jsonl "go" "Edit|/tmp/a.go" "T:lgtm"
-ok "小寫 lgtm 也要認得" "正確性宣稱" "$(run h10.jsonl)"
-
-make_transcript h11.jsonl "go" "Edit|/tmp/a.go" "T:Pushed to feature/x."
-ok "推到非主幹分支也算 commit 宣稱" "版控" "$(run h11.jsonl)"
+ok "小寫 lgtm 也要認得" "正確性宣稱" "$(r h10)"
+ok "推到非主幹分支也算 commit 宣稱" "版控" "$(r h11)"
 
 printf '\n「帶受詞或帶狀態詞」——這是明著宣告過的不變式,要有反例守著\n'
 # 這三個字在英文技術對話裡到處都是。放寬成裸詞的話規則會對每一段文字開火。
-make_transcript h12.jsonl "go" "Edit|/tmp/a.go" "T:I fixed a typo in the comment while reading."
-no "fixed 沒有受詞時不算正確性宣稱" "正確性宣稱" "$(run h12.jsonl)"
-
-make_transcript h13.jsonl "go" "Edit|/tmp/a.go" "T:I added tests for that path."
-no "tests 沒有狀態詞時不算測試綠" "測試" "$(run h13.jsonl)"
-
-make_transcript h14.jsonl "go" "Edit|/tmp/a.go" "T:The merge strategy here is rebase."
-no "merge 沒有 safe/ready/good 時不算正確性宣稱" "正確性宣稱" "$(run h14.jsonl)"
+no "fixed 沒有受詞時不算正確性宣稱" "正確性宣稱" "$(r h12)"
+no "tests 沒有狀態詞時不算測試綠" "測試" "$(r h13)"
+no "merge 沒有 safe/ready/good 時不算正確性宣稱" "正確性宣稱" "$(r h14)"
 
 printf '\n被質疑後未查證\n'
-make_transcript t6.jsonl "為何要這樣？不對吧" "Bash|grep -n x DualTrackView.swift" \
-    "T:因為 \`ReferenceBookmarkStore\` 是靠路徑解析的。"
-ok "對沒打開過的檔下結論" "質疑後未查證" "$(run t6.jsonl)"
-
-make_transcript t7.jsonl "為何要這樣？不對吧" "Read|/x/ReferenceBookmarkStore.swift" \
-    "T:因為 \`ReferenceBookmarkStore\` 是靠 file ID 解析的。"
-no "讀過那個檔就不該報" "質疑後未查證" "$(run t7.jsonl)"
-
-make_transcript t8.jsonl "好，繼續" "Bash|grep -n x DualTrackView.swift" \
-    "T:因為 \`ReferenceBookmarkStore\` 是靠路徑解析的。"
-no "沒被質疑時不套這條" "質疑後未查證" "$(run t8.jsonl)"
+ok "對沒打開過的檔下結論" "質疑後未查證" "$(r t6)"
+no "讀過那個檔就不該報" "質疑後未查證" "$(r t7)"
+no "沒被質疑時不套這條" "質疑後未查證" "$(r t8)"
 
 printf '\n乾淨與退化\n'
-make_transcript t9.jsonl "做吧" "Bash|ls" "T:看了一下，目錄裡沒有那個檔。"
-no "沒有宣稱就不該有輸出" "⚠" "$(run t9.jsonl)"
-
-: > t10.jsonl
-ok "空紀錄不崩" "0 個回合" "$(run t10.jsonl)"
+no "沒有宣稱就不該有輸出" "⚠" "$(r t9)"
+ok "空紀錄不崩" "0 個回合" "$(r t10)"
 
 
 printf '\n安裝器\n'
