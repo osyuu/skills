@@ -12,32 +12,46 @@ HOOKS=$(cd "$(dirname "$0")" && pwd)
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 pass=0; fail=0
 
-prep() { rm -rf "$SB/h"; mkdir -p "$SB/h"; cp "$HOOKS"/*.sh "$HOOKS"/*.conf "$SB/h/" 2>/dev/null; }
+# 每條注入各跑各的沙箱、零共享,所以可以並行。序列跑是 O(注入數 × 完整套件)。
+# 結果寫進檔、最後依序讀出來印:計數器在子 shell 裡加不到父層,而輸出順序要穩定才讀得懂。
+JOBS=${MUTANT_JOBS:-14}
+seq_n=0
+
+prep() { rm -rf "$1"; mkdir -p "$1"; cp "$HOOKS"/*.sh "$HOOKS"/*.conf "$1/" 2>/dev/null; }
 
 # 基準打在複本上：複本少了相依而本來就紅的話，每條注入都會免費「轉紅」。
-prep
-if ! sh "$SB/h/tests.sh" >/dev/null 2>&1; then
+prep "$SB/base"
+if ! sh "$SB/base/tests.sh" >/dev/null 2>&1; then
   echo "基準測試在複本裡就沒過，突變測試無意義。"; exit 2
 fi
 
-mut() { # mut <名稱> <檔名> <python 表達式：s 為原始內容>
-  prep
+_mut_one() { # $1=名稱 $2=序號 $3=檔名 $4=表達式
+  d="$SB/j$2"
+  prep "$d"
   python3 -c "
 import pathlib,sys
-p=pathlib.Path('$SB/h/$2'); s=p.read_text()
-n=($3)
+p=pathlib.Path('$d/$3'); s=p.read_text()
+n=($4)
 if n==s: print('NOCHANGE'); sys.exit(9)
 p.write_text(n)" >/dev/null 2>&1
   case $? in
-    9) fail=$((fail+1)); printf '  FAIL  %s\n        注入沒有改到任何東西（pattern 過期了？）\n' "$1"; return ;;
+    9) printf 'FAIL\t%s\t注入沒有改到任何東西（pattern 過期了？）\n' "$1" > "$SB/r$2"; return ;;
     0) ;;
-    *) fail=$((fail+1)); printf '  FAIL  %s\n        注入腳本自己錯了\n' "$1"; return ;;
+    *) printf 'FAIL\t%s\t注入腳本自己錯了\n' "$1" > "$SB/r$2"; return ;;
   esac
-  if sh "$SB/h/tests.sh" >/dev/null 2>&1; then
-    fail=$((fail+1)); printf '  FAIL  %s\n        測試仍全綠 → 這段 code 沒有守護者\n' "$1"
+  if sh "$d/tests.sh" >/dev/null 2>&1; then
+    printf 'FAIL\t%s\t測試仍全綠 → 這段 code 沒有守護者\n' "$1" > "$SB/r$2"
   else
-    pass=$((pass+1)); printf '  ok    %s\n' "$1"
+    printf 'ok\t%s\t\n' "$1" > "$SB/r$2"
   fi
+  rm -rf "$d"
+}
+
+mut() { # mut <名稱> <檔名> <python 表達式：s 為原始內容>
+  seq_n=$((seq_n + 1))
+  _mut_one "$1" "$seq_n" "$2" "$3" &
+  [ $((seq_n % JOBS)) -eq 0 ] && wait
+  return 0
 }
 
 echo "── hooks 的突變 ──"
@@ -74,6 +88,19 @@ mut "不帶出失敗那幾行"          "$S" "s.replace(\"printf '%s\\\\n' \\\"\
 mut "mutants 不 </dev/null"      "$S" "s.replace('sh \"\$m\" </dev/null', 'sh \"\$m\"')"
 mut "PAIRS 反查拿掉"            "$Y" "s.replace('for live in hooks/*.sh .claude/hooks/*; do', 'for live in ; do')"
 mut "不一致時不出聲"            "$Y" "s.replace('與來源 %s 不一致', '（靜音）')"
+
+wait
+i=0
+while [ "$i" -lt "$seq_n" ]; do
+  i=$((i + 1))
+  # **IFS 要真的 tab**:`IFS='\t'` 在 POSIX sh 是反斜線與 t 兩個字元,讀出來全空。
+  IFS="$(printf '\t')" read -r verdict name why < "$SB/r$i"
+  if [ "$verdict" = ok ]; then
+    pass=$((pass + 1)); printf '  ok    %s\n' "$name"
+  else
+    fail=$((fail + 1)); printf '  FAIL  %s\n        %s\n' "$name" "$why"
+  fi
+done
 
 echo
 printf '%s 條注入轉紅，%s 條沒有\n' "$pass" "$fail"

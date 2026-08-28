@@ -37,8 +37,9 @@ if ! sh "$SB/base/tests/run.sh" >/dev/null 2>&1; then
   echo "基準測試在複本裡就沒過，突變測試無意義。"; exit 2
 fi
 
-_mut_one() { # $1=序號 $2=名稱 $3=表達式 $4=目標檔
-  d="$SB/j$1"
+_mut_one() { # $1=名稱 $2=序號 $3=表達式 $4=目標檔
+  # 參數順序與其餘五支一致(名稱在前)。指紋工具靠 $1 取名稱,兩套順序會讓它只對一半可用。
+  d="$SB/j$2"
   prep "$d"
   python3 -c "
 import pathlib,sys
@@ -47,14 +48,14 @@ n=($3)
 if n==s: print('NOCHANGE'); sys.exit(9)
 p.write_text(n)" >/dev/null 2>&1
   case $? in
-    9) printf 'FAIL\t%s\t注入沒有改到任何東西（pattern 過期了？）\n' "$2" > "$SB/r$1"; return ;;
+    9) printf 'FAIL\t%s\t注入沒有改到任何東西（pattern 過期了？）\n' "$1" > "$SB/r$2"; return ;;
     0) ;;
-    *) printf 'FAIL\t%s\t注入腳本自己錯了\n' "$2" > "$SB/r$1"; return ;;
+    *) printf 'FAIL\t%s\t注入腳本自己錯了\n' "$1" > "$SB/r$2"; return ;;
   esac
   if sh "$d/tests/run.sh" >/dev/null 2>&1; then
-    printf 'FAIL\t%s\t測試仍全綠 → 這段 code 沒有守護者\n' "$2" > "$SB/r$1"
+    printf 'FAIL\t%s\t測試仍全綠 → 這段 code 沒有守護者\n' "$1" > "$SB/r$2"
   else
-    printf 'ok\t%s\t\n' "$2" > "$SB/r$1"
+    printf 'ok\t%s\t\n' "$1" > "$SB/r$2"
   fi
   rm -rf "$d"
 }
@@ -66,7 +67,7 @@ sec() { seq_n=$((seq_n + 1)); printf 'sec\t%s\t\n' "$1" > "$SB/r$seq_n"; }
 mut() { # mut <名稱> <python 表達式：s 為目標檔內容> [目標檔，預設 assets/claim-check.py]
   seq_n=$((seq_n + 1))
   printf '%s\n' "$1" >> "$SB/names"
-  _mut_one "$seq_n" "$1" "$2" "${3:-assets/claim-check.py}" &
+  _mut_one "$1" "$seq_n" "$2" "${3:-assets/claim-check.py}" &
   [ $((seq_n % JOBS)) -eq 0 ] && wait
   return 0
 }
