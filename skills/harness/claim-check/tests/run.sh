@@ -32,18 +32,14 @@ no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該
   *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
 
 # ── 批次 driver ──────────────────────────────────────────────────────────
-# 整套 transcript 建構、replay、probe 由**一個** python 進程依序做完,每個結果落到
-# $OUT/<id>,下面的斷言只 cat 檔案比對。逐項各叫一次 python3 的話,光進程啟動就是
-# 一百多次、佔掉整支測試九成以上的時間——突變測試再乘 41 倍。
+# 整套 transcript 建構、replay、probe 由**一個** python 進程依序做完,結果落到
+# $OUT/<id>,下面的斷言只 cat 檔案比對。
 #
-# 忠實性的三個要點,改 driver 時不要破壞:
-#   1. replay 是把 claim-check.py 以 __main__ 逐次重新 exec(不是 import 一次共用),
-#      所以 conf 檔在兩次 replay 之間的增減仍會被看到——e6b 跑兩次、conf 那幾段全靠這個。
-#   2. checker 崩掉時,traceback 落進跟 subprocess 相同的那條流(replay 是 2>&1 合併,
-#      probe 只收 stdout、traceback 進 stderr)——斷言看到的東西跟開子進程時一致,
-#      壞掉的 checker 不會被 driver 吃成「空輸出但測試照綠」。
-#   3. driver 若自己死掉,$OUT 下的檔案缺失,後面的 cat 全數落空 → 斷言成排轉紅,
-#      不會靜默通過。
+# 改 driver 時不要破壞這兩點:
+#   1. replay 每次都把 checker 以 __main__ **重新 exec**,不是 import 一次共用——
+#      conf 檔在兩次 replay 之間的增減要被看到,〈conf 覆寫〉整段靠這個。
+#   2. checker 崩掉時 traceback 要落進跟開子進程時同一條流(replay 合併 stderr、
+#      probe 只收 stdout),否則壞掉的 checker 會被吃成「空輸出而測試照綠」。
 python3 - "$CHECK" "$SANDBOX/.out" <<'PYEOF'
 import io, json, os, sys, traceback
 from contextlib import redirect_stdout, redirect_stderr
