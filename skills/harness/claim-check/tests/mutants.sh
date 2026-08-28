@@ -211,6 +211,17 @@ if [ "$seq_n" -le 0 ] || [ "$((pass + fail + sec_n))" -ne "$seq_n" ]; then
     exit 1
 fi
 
+
+# **偵測器自己也要有守門。** 它靜默失效的話,「注入是靠 crash 轉紅的」會悄悄回來
+# ——而那正是它裝進來要擋的東西。實測踩過:裝到一半、某一支只有完成性斷言沒有偵測器,
+# 而它照樣印全綠。送一個必定壞語法的注入進去,它必須指認得出來。
+# 用序號 0,不動 seq_n,所以不影響完成性斷言的計數。
+_mut_one "__偵測器自檢__" 0 "s + chr(10) + chr(41) + chr(40) + chr(10)" "assets/claim-check.py"
+case "$(cat "$SB/r0" 2>/dev/null)" in
+  *語法壞掉*) rm -f "$SB/r0" ;;
+  *) printf '\n偵測器沒有指認語法壞掉的注入 —— 它自己失效了\n'; exit 2 ;;
+esac
+
 _finished=1
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
