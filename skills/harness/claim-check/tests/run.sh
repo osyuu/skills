@@ -446,7 +446,7 @@ PYEOF
 # 缺一個 `.out` 的話 `cat` 回空字串,而空字串不含任何 needle → 那條 `no` 型斷言必過
 # ——實測有 31 個 id 只被 `no` 型消費,漏寫它們的話輸出跟乾淨跑逐 byte 相同。
 # 指紋與 no-op 哨兵都掃不到這個盲區(兩邊都不 FAIL,FAIL 集合不變)。
-r() { [ -f "$SANDBOX/.out/$1" ] || : > "$SANDBOX/.missing.$1"; cat "$SANDBOX/.out/$1" 2>/dev/null; }
+r() { [ -s "$SANDBOX/.out/$1" ] || : > "$SANDBOX/.missing.$1"; cat "$SANDBOX/.out/$1" 2>/dev/null; }
 
 printf '\n背景宣稱\n'
 ok "說在跑但沒啟動背景工作" "背景執行" "$(r t1)"

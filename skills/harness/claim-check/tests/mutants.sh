@@ -16,7 +16,13 @@ CLAIM_CHECK_HOME=$(mktemp -d)/.claude; mkdir -p "$CLAIM_CHECK_HOME"; export CLAI
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
-SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
+SB=$(mktemp -d)
+# **提早結束也要出聲。** 完成性斷言在檔尾,而 `MUTANT_JOBS` 非數字時
+# `$((seq_n % JOBS))` 在 set -u 下當場打死整支——只印了區塊標題、沒有摘要行、
+# 而退出碼是 0,pre-commit 照樣印綠勾。trap 才蓋得到任何一種提早死。
+_finished=0
+trap 'rm -rf "$SB"; [ "$_finished" = 1 ] || { printf "\n突變測試沒跑完就結束了\n" >&2; exit 1; }' EXIT
+
 pass=0; fail=0
 
 # scripts 也要帶：run.sh 有一整段在測 install.sh，少了它基準就紅，
@@ -46,8 +52,19 @@ import pathlib,sys
 p=pathlib.Path('$d/$4'); s=p.read_text()
 n=($3)
 if n==s: print('NOCHANGE'); sys.exit(9)
+if p.suffix == '.py':
+    import ast
+    try: ast.parse(n)
+    except SyntaxError: sys.exit(8)
 p.write_text(n)" >/dev/null 2>&1
-  case $? in
+  # **語法壞掉的注入是靠 crash 轉紅的,不是靠它宣稱守的行為。** 那種注入永遠會紅,
+  # 於是它守的那段 code 就算守護者全部消失也偵測不到——覆蓋率實際上是 0。
+  # 實測抓到一條:切字串的 index 抓錯位置、留下一個裸的 `r`,它殺掉 51 條斷言、
+  # 其中 49 條輸出含 Traceback,而真正守那段行為的只有 1 條。
+  _rc=$?
+  case "$4" in *.sh) [ "$_rc" -eq 0 ] && ! sh -n "$d/$4" 2>/dev/null && _rc=8 ;; esac
+  case $_rc in
+    8) printf 'FAIL\t%s\t注入讓目標檔語法壞掉 —— 它是靠 crash 轉紅的\n' "$1" > "$SB/r$2"; return ;;
     9) printf 'FAIL\t%s\t注入沒有改到任何東西（pattern 過期了？）\n' "$1" > "$SB/r$2"; return ;;
     0) ;;
     *) printf 'FAIL\t%s\t注入腳本自己錯了\n' "$1" > "$SB/r$2"; return ;;
@@ -62,7 +79,8 @@ p.write_text(n)" >/dev/null 2>&1
 
 # 區塊標題也要排進佇列。直接 echo 的話它們會在 job 還在跑時就全部印完,
 # 而結果在最後才依序出來——標題與它底下那幾條就對不起來了。
-sec() { seq_n=$((seq_n + 1)); printf 'sec\t%s\t\n' "$1" > "$SB/r$seq_n"; }
+sec_n=0
+sec() { seq_n=$((seq_n + 1)); sec_n=$((sec_n + 1)); printf 'sec\t%s\t\n' "$1" > "$SB/r$seq_n"; }
 
 mut() { # mut <名稱> <python 表達式：s 為目標檔內容> [目標檔，預設 assets/claim-check.py]
   seq_n=$((seq_n + 1))
@@ -87,7 +105,7 @@ mut "NAMED 吃多重副檔名"         "s.replace(r'(\\b[\\w][\\w./-]*\\.(?:', r
 sec "── 完整指令形式（只寫 build_runner / slang 的話，grep 它們也算數）──"
 mut "build_runner 要接 build"    "s.replace(r'build_runner\\s+(?:build|watch)', 'build_runner')"
 mut "slang 要接在 dart run 後"   "s.replace(r'(?:dart|flutter)\\s+(?:pub\\s+)?run\\s+slang', 'slang')"
-mut "format/fix 排除唯讀形式"    "s[:s.index(chr(34)+'(?![^')] + s[s.index('--dry-run))'+chr(34))+len('--dry-run))'+chr(34)):]"
+mut "format/fix 排除唯讀形式"    "s.replace(chr(10)+chr(32)*4+chr(114)+chr(34)+'(?![^'+chr(92)+'n]*(?:--output=none|--set-exit-if-changed|--dry-run))'+chr(34), '')"
 
 sec "── conf 覆寫（機制壞掉時,補進 conf 的生態會靜默失效）──"
 mut "conf 的值有被附加上去"      "s.replace('extra = CONF.get(key, \"\").strip()', 'extra = \"\"')"
@@ -185,5 +203,14 @@ while [ "$i" -lt "$seq_n" ]; do
   fi
 done
 
+# **exit 0 必須表示每一條注入都真的跑過。** `MUTANT_JOBS` 是非數字時
+# `$((seq_n % JOBS))` 在 set -u 下當場打死整支,而那時只印了區塊標題、沒有摘要行、
+# exit 0——pre-commit 照樣印綠勾。這條不依賴並行度,job 猝死也接得住。
+if [ "$seq_n" -le 0 ] || [ "$((pass + fail + sec_n))" -ne "$seq_n" ]; then
+    printf '\n注入數(%s)與結果數(%s)對不上 —— 沒跑完\n' "$seq_n" "$((pass + fail + sec_n))"
+    exit 1
+fi
+
+_finished=1
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

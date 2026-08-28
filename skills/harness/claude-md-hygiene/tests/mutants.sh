@@ -16,7 +16,13 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
 NAME=$(basename "$SKILL")
-SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
+SB=$(mktemp -d)
+# **提早結束也要出聲。** 完成性斷言在檔尾,而 `MUTANT_JOBS` 非數字時
+# `$((seq_n % JOBS))` 在 set -u 下當場打死整支——只印了區塊標題、沒有摘要行、
+# 而退出碼是 0,pre-commit 照樣印綠勾。trap 才蓋得到任何一種提早死。
+_finished=0
+trap 'rm -rf "$SB"; [ "$_finished" = 1 ] || { printf "\n突變測試沒跑完就結束了\n" >&2; exit 1; }' EXIT
+
 pass=0; fail=0
 
 # 每條注入各跑各的沙箱、零共享,所以可以並行。序列跑是 O(注入數 × 完整套件)。
@@ -42,8 +48,19 @@ import pathlib,sys
 p=pathlib.Path('$d/w/$3'); s=p.read_text()
 n=($4)
 if n==s: print('NOCHANGE'); sys.exit(9)
+if p.suffix == '.py':
+    import ast
+    try: ast.parse(n)
+    except SyntaxError: sys.exit(8)
 p.write_text(n)" >/dev/null 2>&1
-  case $? in
+  # **語法壞掉的注入是靠 crash 轉紅的,不是靠它宣稱守的行為。** 那種注入永遠會紅,
+  # 於是它守的那段 code 就算守護者全部消失也偵測不到——覆蓋率實際上是 0。
+  # 實測抓到一條:切字串的 index 抓錯位置、留下一個裸的 `r`,它殺掉 51 條斷言、
+  # 其中 49 條輸出含 Traceback,而真正守那段行為的只有 1 條。
+  _rc=$?
+  case "$3" in *.sh) [ "$_rc" -eq 0 ] && ! sh -n "$d/w/$3" 2>/dev/null && _rc=8 ;; esac
+  case $_rc in
+    8) printf 'FAIL\t%s\t注入讓目標檔語法壞掉 —— 它是靠 crash 轉紅的\n' "$1" > "$SB/r$2"; return ;;
     9) printf 'FAIL\t%s\t注入沒有改到任何東西（pattern 過期了？）\n' "$1" > "$SB/r$2"; return ;;
     0) ;;
     *) printf 'FAIL\t%s\t注入腳本自己錯了\n' "$1" > "$SB/r$2"; return ;;
@@ -98,5 +115,14 @@ while [ "$i" -lt "$seq_n" ]; do
 done
 
 echo
+# **exit 0 必須表示每一條注入都真的跑過。** `MUTANT_JOBS` 是非數字時
+# `$((seq_n % JOBS))` 在 set -u 下當場打死整支,而那時只印了區塊標題、沒有摘要行、
+# exit 0——pre-commit 照樣印綠勾。這條不依賴並行度,job 猝死也接得住。
+if [ "$seq_n" -le 0 ] || [ "$((pass + fail))" -ne "$seq_n" ]; then
+    printf '\n注入數(%s)與結果數(%s)對不上 —— 沒跑完\n' "$seq_n" "$((pass + fail))"
+    exit 1
+fi
+
+_finished=1
 printf '%s 條注入轉紅，%s 條沒有\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
