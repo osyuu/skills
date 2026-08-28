@@ -30,6 +30,21 @@ if [ ! -f "$conf" ]; then
 fi
 # shellcheck disable=SC1090
 . "$conf"
+
+# 未填的 <TODO> 會讓每一條 grep 都配不到,而配不到印出來就是「0 條違規」——
+# 與真的乾淨一模一樣。**這裡必須出聲**:一道恆 0 的守門比不裝更糟,
+# 它讓人以為那條規則有人在看。
+# exit code 照各模式原本的契約:warn/audit 出聲但 exit 0(pre-commit 不擋),
+# strict 才 exit 1。**這裡不能無條件 exit 1**——併進既有 pre-commit(husky 之類)的人
+# 會照檔頭寫的「warn-only, exit 0」不加 `|| true`,那時未填的 conf 會讓整個 repo
+# commit 不進去。
+case "$ROOT$PACKAGE$IMPORT_RE$LAYERS$PARTITIONED$IGNORE" in
+  *"<TODO"*)
+    echo "arch-guard: $conf 還有未填的 <TODO> — 這次檢查等於沒跑" >&2
+    [ "$mode" = "strict" ] && exit 1
+    exit 0 ;;
+esac
+
 : "${ROOT:=lib}" "${IGNORE:=__never_matches__}"
 
 count=0

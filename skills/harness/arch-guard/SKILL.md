@@ -11,6 +11,7 @@ description: >-
   或 CI」，或想把某個 repo 的架構不變式變成可機械偵測的守門時，主動使用。泛用（任何語言/package，靠 config 參數化），與
   sdd-harness-init（decision-log drift）互補、共用同一個 pre-commit。純寫應用 code、或
   只是解釋架構概念（沒有要裝守門）時不要用。
+  也認 enforce layering / レイヤー違反を検出。
 ---
 
 # arch-guard — 分層依賴方向守門

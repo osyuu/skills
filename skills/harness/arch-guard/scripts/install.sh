@@ -31,7 +31,7 @@ if [ -f hooks/arch-layers.conf ]; then
   echo "arch-guard: hooks/arch-layers.conf exists — left as-is"
 else
   cp "$ASSETS/arch-layers.conf.template" hooks/arch-layers.conf
-  echo "arch-guard: hooks/arch-layers.conf seeded — FILL IN the <TODO> layers"
+  echo "arch-guard: hooks/arch-layers.conf seeded — FILL IN every <TODO>"
 fi
 
 # 3. pre-commit calls the checker (marker-guarded, idempotent)
@@ -93,7 +93,9 @@ fi
 
 echo
 echo "Next (agent / you):"
-echo "  1. Fill hooks/arch-layers.conf (PACKAGE, LAYERS top→bottom, PARTITIONED),"
+echo "  1. Fill hooks/arch-layers.conf (ROOT, PACKAGE, IMPORT_RE, LAYERS top→bottom,
+     PARTITIONED, IGNORE) — the checker refuses to run while any <TODO> remains.
+     Fields that do not apply take an empty string, not a made-up value,"
 echo "     and CHOKEPOINTS if the repo has 'must go through X' rules worth grepping."
 echo "  2. Run: sh hooks/arch-guard-check.sh --audit   # see current violations"
 echo "     Pick each chokepoint's mode from what this reports: 0 hits -> all, debt -> new."

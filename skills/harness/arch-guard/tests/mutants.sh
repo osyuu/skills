@@ -52,6 +52,11 @@ p.write_text(n)" >/dev/null 2>&1
 echo "── ${NAME} 的突變 ──"
 I=scripts/install.sh
 mut "改回 [ -d .git ]"     "$I" "s.replace('git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||', '[ -d .git ] ||')"
+mut "模板的 ROOT 沒有出廠預設值" "assets/arch-layers.conf.template" "s.replace('ROOT='+chr(34)+'<TODO-source-root>'+chr(34), 'ROOT='+chr(34)+'lib'+chr(34))"
+mut "checker 對未填的 TODO 出聲" "assets/arch-guard-check.sh" "s.replace('TODO'+chr(34)+'*)', 'NEVERMATCH'+chr(34)+'*)')"
+mut "warn 模式不會回非零"        "assets/arch-guard-check.sh" "s.replace('[ \"\$mode\" = \"strict\" ] && exit 1', 'true')"
+mut "strict 模式會回非零"        "assets/arch-guard-check.sh" "s.replace('[ \"\$mode\" = \"strict\" ] && exit 1', 'false')"
+mut "install 插入的呼叫帶 || true" "scripts/install.sh" "s.replace('arch-guard-check.sh\" || true', 'arch-guard-check.sh\"')"
 mut "拿掉 marker 感知"     "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/ { d++; if (d == 1) bs = NR; next }', '')"
 mut "巢狀不計深度"        "$I" "s.replace('{ if (d > 0) d--; if (d == 0) bs = 0; next }', '{ bs = 0; next }')"
 mut "marker 錨死在第 0 欄"  "$I" "s.replace('/^[[:space:]]*#[[:space:]]*>>>/', '/^#[[:space:]]*>>>/').replace('/^[[:space:]]*#[[:space:]]*<<</', '/^#[[:space:]]*<<</')"

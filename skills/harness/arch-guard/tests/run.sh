@@ -135,6 +135,49 @@ conf 'all:::extends StateNotifier:::no new notifier'
 ARCH_LAYERS_CONF="$WORK/c.sh" sh "$CHECK" --strict >/dev/null 2>&1
 [ $? -eq 1 ] && { pass=$((pass + 1)); echo "  ok    --strict 對純必經點違規也 exit 1"; } || { fail=$((fail + 1)); echo "  FAIL  --strict 對純必經點違規應 exit 1"; }
 
+echo "── 模板的每個欄位都要等人填 ──"
+# 出廠帶著「可用但屬於某個生態」的值,而且沒標 <TODO>,就會讓照著 install 指示填完的人
+# 拿到一道恆 0 的守門——0 條違規與真的乾淨在畫面上一模一樣。
+_tmpl="$HERE/../assets/arch-layers.conf.template"
+_missing=""
+for _k in ROOT PACKAGE IMPORT_RE LAYERS PARTITIONED IGNORE; do
+  grep -qE "^${_k}=[\"']?<TODO" "$_tmpl" || _missing="$_missing $_k"
+done
+[ -z "$_missing" ] \
+  && { pass=$((pass + 1)); echo "  ok    模板六個欄位都標了 <TODO>"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  模板這些欄位沒標 <TODO>:$_missing"; }
+
+# 未填就跑,必須出聲。這條守的是「守門靜默失效」本身。
+_sb=$(mktemp -d); mkdir -p "$_sb/hooks"
+cp "$HERE/../assets/arch-guard-check.sh" "$_sb/hooks/"
+cp "$_tmpl" "$_sb/hooks/arch-layers.conf"
+_out=$(cd "$_sb" && sh hooks/arch-guard-check.sh --audit 2>&1)
+case "$_out" in
+  *"<TODO"*) pass=$((pass + 1)); echo "  ok    conf 留著 <TODO> 時 checker 會出聲" ;;
+  *) fail=$((fail + 1)); printf '  FAIL  conf 留著 <TODO> 時 checker 沒出聲\n        實得：%s\n' "$_out" ;;
+esac
+rm -rf "$_sb"
+
+# exit code 是契約的一部分:併進既有 pre-commit 的人會照檔頭寫的「warn-only, exit 0」
+# 不加 `|| true`,那時無條件的非零會讓整個 repo commit 不進去。
+_sb2=$(mktemp -d); mkdir -p "$_sb2/hooks"
+cp "$HERE/../assets/arch-guard-check.sh" "$_sb2/hooks/"
+cp "$_tmpl" "$_sb2/hooks/arch-layers.conf"
+(cd "$_sb2" && sh hooks/arch-guard-check.sh >/dev/null 2>&1)
+[ $? -eq 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    未填 conf 時 warn 模式仍 exit 0"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  未填 conf 時 warn 模式回非零 — 不帶 || true 的 pre-commit 會被擋死"; }
+(cd "$_sb2" && sh hooks/arch-guard-check.sh --strict >/dev/null 2>&1)
+[ $? -ne 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    未填 conf 時 --strict exit 非零"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  未填 conf 時 --strict 回 0 — CI 對一道死掉的守門放行"; }
+rm -rf "$_sb2"
+
+# 安裝器插進 pre-commit 的那行必須帶 || true,否則 warn-only 的契約靠不住
+grep -q 'arch-guard-check.sh" || true' "$HERE/../scripts/install.sh" \
+  && { pass=$((pass + 1)); echo "  ok    install.sh 插入的呼叫帶 || true"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  install.sh 插入的呼叫少了 || true"; }
+
 echo "── Python IMPORT_RE（模板範例）──"
 # 結尾 `\.` 會漏掉 `from pkg.layer import x`（layer 後面不是點）——audit 印 0、
 # 與乾淨無法分辨。模板範例必須用 boundary class 收尾，這裡拿它實跑一次。
