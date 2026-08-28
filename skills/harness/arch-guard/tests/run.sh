@@ -110,10 +110,12 @@ conf 'all:::(unclosed:::壞 pattern 要出聲'
 out=$(run); ok "all 模式的壞 pattern 不被吞掉" "unclosed" "$out"
 
 # 這條驗的是**空字串不會把解析弄壞**,所以 LAYERS 要留著——兩邊都空是「沒有規則
-# 可跑」,checker 現在會對那種 conf 出聲(見下面〈沒有規則可跑〉那組)。
-LAYERS_V="core"
+# 可跑」,checker 會對那種 conf 出聲(見下面〈沒有規則可跑〉那組)。
+# **要留兩層、而且期望非 0**:只留一層的話 higher 恆空、一次 git grep 都不會發,
+# 這條就變成在斷言一個必然,拿掉整個 chokepoint 迴圈它照樣綠。
+LAYERS_V="features core"
 conf ''
-out=$(run); ok "CHOKEPOINTS 空時乾淨退出" "共 0 條違規" "$out"
+out=$(run); ok "CHOKEPOINTS 空時乾淨退出" "共 1 條違規" "$out"
 LAYERS_V=""
 
 echo "── 分層規則（既有功能，別被改壞）──"
@@ -152,19 +154,21 @@ done
   || { fail=$((fail + 1)); echo "  FAIL  模板這些欄位沒標 <TODO>:$_missing"; }
 
 # 未填就跑,必須出聲。這條守的是「守門靜默失效」本身。
-_sb=$(mktemp -d); mkdir -p "$_sb/hooks"
+_sb=$(mktemp -d "$WORK/s.XXXXXX"); mkdir -p "$_sb/hooks"
 cp "$HERE/../assets/arch-guard-check.sh" "$_sb/hooks/"
 cp "$_tmpl" "$_sb/hooks/arch-layers.conf"
 _out=$(cd "$_sb" && sh hooks/arch-guard-check.sh --audit 2>&1)
+# 比對**那條訊息**而不是 `<TODO` 三個字:模板的 `ROOT="<TODO-source-root>"` 不是目錄,
+# ROOT 那道閘的訊息裡也含 `<TODO`,拿它當 needle 的話 TODO 這道閘被拿掉照樣綠。
 case "$_out" in
-  *"<TODO"*) pass=$((pass + 1)); echo "  ok    conf 留著 <TODO> 時 checker 會出聲" ;;
+  *"還有未填的 <TODO>"*) pass=$((pass + 1)); echo "  ok    conf 留著 <TODO> 時 checker 會出聲" ;;
   *) fail=$((fail + 1)); printf '  FAIL  conf 留著 <TODO> 時 checker 沒出聲\n        實得：%s\n' "$_out" ;;
 esac
 rm -rf "$_sb"
 
 # exit code 是契約的一部分:併進既有 pre-commit 的人會照檔頭寫的「warn-only, exit 0」
 # 不加 `|| true`,那時無條件的非零會讓整個 repo commit 不進去。
-_sb2=$(mktemp -d); mkdir -p "$_sb2/hooks"
+_sb2=$(mktemp -d "$WORK/s.XXXXXX"); mkdir -p "$_sb2/hooks"
 cp "$HERE/../assets/arch-guard-check.sh" "$_sb2/hooks/"
 cp "$_tmpl" "$_sb2/hooks/arch-layers.conf"
 (cd "$_sb2" && sh hooks/arch-guard-check.sh >/dev/null 2>&1)
@@ -185,36 +189,101 @@ rm -rf "$_sb2"
 
 # 填完 <TODO> 之後的第二種「等於沒跑」:模板允許不適用的欄位留空,填成 LAYERS=""
 # 且沒有半條 chokepoint 是打得出來的,而那時兩個迴圈都不會進去、尾端照印「共 0 條違規」。
-_sb3=$(mktemp -d); mkdir -p "$_sb3/hooks"
+_sb3=$(mktemp -d "$WORK/s.XXXXXX"); mkdir -p "$_sb3/hooks/../lib" "$_sb3/lib/features/f1" "$_sb3/lib/features/f2"
 cp "$HERE/../assets/arch-guard-check.sh" "$_sb3/hooks/"
-_emptyconf() {  # $1 = CHOKEPOINTS 的內容
-  printf 'ROOT="lib"\nPACKAGE="x"\nIMPORT_RE="i {LAYER}"\nLAYERS=""\nPARTITIONED=""\nIGNORE="__never_matches__"\nCHOKEPOINTS="%s"\n' "$1" > "$_sb3/hooks/arch-layers.conf"
+printf "import 'package:x/features/f2/b.dart';\n" > "$_sb3/lib/features/f1/a.dart"
+echo 'class B{}' > "$_sb3/lib/features/f2/b.dart"
+( cd "$_sb3" && git init -q . && git config user.email t@t && git config user.name t &&
+  git add -A && git -c core.hooksPath=/dev/null commit -qm i ) >/dev/null 2>&1
+_gateconf() {  # $1=LAYERS  $2=PARTITIONED  $3=CHOKEPOINTS
+  printf 'ROOT="lib"\nPACKAGE="x"\nIMPORT_RE="package:x/{LAYER}/"\nLAYERS="%s"\nPARTITIONED="%s"\nIGNORE="__never_matches__"\nCHOKEPOINTS="%s"\n' \
+    "$1" "$2" "$3" > "$_sb3/hooks/arch-layers.conf"
 }
-_emptyconf ""
-_eo=$(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit 2>&1); _erc=$?
+_gate() { (cd "$_sb3" && sh hooks/arch-guard-check.sh ${1:+"$1"} 2>&1); }
+_gaterc() { (cd "$_sb3" && sh hooks/arch-guard-check.sh ${1:+"$1"} >/dev/null 2>&1); }
+
+# 判準是**這次執行會不會發出任何一次 git grep**,不是「哪個欄位空著」。三個半邊
+# 各自獨立觸發,所以三個都要有正例(不該開火)與反例(該開火)。
+_gateconf "" "" ""
+_eo=$(_gate --audit); _gaterc --audit; _erc=$?
 { [ "$_erc" -ne 0 ] && [ -n "$_eo" ]; } \
-  && { pass=$((pass + 1)); echo "  ok    LAYERS 與 CHOKEPOINTS 皆空時 --audit 出聲且非零"; } \
+  && { pass=$((pass + 1)); echo "  ok    三個半邊都空時 --audit 出聲且非零"; } \
   || { fail=$((fail + 1)); printf '  FAIL  沒有規則可跑卻靜默通過\n        rc=%s 實得：%s\n' "$_erc" "$_eo"; }
-(cd "$_sb3" && sh hooks/arch-guard-check.sh >/dev/null 2>&1)
+_gaterc
 [ $? -eq 0 ] \
   && { pass=$((pass + 1)); echo "  ok    沒有規則可跑時 warn 模式仍 exit 0"; } \
   || { fail=$((fail + 1)); echo "  FAIL  沒有規則可跑時 warn 回非零 — 不帶 || true 的 pre-commit 會被擋死"; }
-# 註解不是規則。CHOKEPOINTS 只剩註解時仍然是「沒有規則可跑」。
-_emptyconf '
-# 之後再補
-'
-(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit >/dev/null 2>&1)
+
+# 訊息走 stderr。走 stdout 的話「--audit 的 stdout 全空 = 0 hits」那個推論會被它填滿,
+# 而 install.sh 正是教人照 audit 的輸出決定每個 chokepoint 的 mode。
+_gateconf "" "" ""
+_so=$( (cd "$_sb3" && sh hooks/arch-guard-check.sh --audit 2>/dev/null) )
+[ -z "$_so" ] \
+  && { pass=$((pass + 1)); echo "  ok    出聲走 stderr,stdout 保持空"; } \
+  || { fail=$((fail + 1)); printf '  FAIL  訊息跑到 stdout 了：%s\n' "$_so"; }
+
+# **只有一層 = 零次 git grep**:higher 恆空,內層迴圈一次都不進。跟空著等價。
+_gateconf "core" "" ""
+_gaterc --audit
 [ $? -ne 0 ] \
-  && { pass=$((pass + 1)); echo "  ok    CHOKEPOINTS 只剩註解也算沒有規則"; } \
-  || { fail=$((fail + 1)); echo "  FAIL  CHOKEPOINTS 只剩註解時被當成有規則 — 那是一道恆 0 的守門"; }
-# 反向:有一條真的規則就不准開火,否則只設 chokepoint 不分層的 repo 永遠交不出條件。
-_emptyconf '
-all:::DioException:::no dio
+  && { pass=$((pass + 1)); echo "  ok    只有一層也算沒有規則可跑"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  只有一層被當成有規則 — 那是一道恆 0 的守門"; }
+
+# 空白不是內容。`LAYERS="   "` 與空字串等價。
+_gateconf "   " "" ""
+_gaterc --audit
+[ $? -ne 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    LAYERS 只有空白也算沒有規則可跑"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  LAYERS 只有空白被當成有規則"; }
+
+# 註解不是規則,**縮排的註解也不是**——模板裡的 CHOKEPOINTS 範例正是縮排的。
+_gateconf "" "" '
+    # 之後再補
 '
-(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit >/dev/null 2>&1)
+_gaterc --audit
+[ $? -ne 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    縮排的註解也算沒有規則"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  縮排註解被當成規則 — sed 的去空白沒了"; }
+
+# 反向三條:三個半邊各自成立時都不准被誤殺。**PARTITIONED 那條與 LAYERS 無關**,
+# 漏掉它會讓一份抓得到 sibling 違規的 conf 完全不跑(而 warn 模式下只有一行 stderr)。
+_gateconf "" "features" ""
+_po=$(_gate --audit)
+case "$_po" in
+  *"f1 → f2"*) pass=$((pass + 1)); echo "  ok    只有 PARTITIONED 的 conf 照常跑並抓到違規" ;;
+  *) fail=$((fail + 1)); printf '  FAIL  只設 PARTITIONED 的 conf 被誤判成沒有規則\n        實得：%s\n' "$_po" ;;
+esac
+
+_gateconf "" "" '
+all:::class B:::不准有 B
+'
+_co=$(_gate --audit)
+case "$_co" in
+  *"不准有 B"*) pass=$((pass + 1)); echo "  ok    只有 chokepoint 的 conf 照常跑並抓到違規" ;;
+  *) fail=$((fail + 1)); printf '  FAIL  只設 chokepoint 的 conf 被誤判成沒有規則\n        實得：%s\n' "$_co" ;;
+esac
+
+_gateconf "features core" "" ""
+_gaterc --audit
 [ $? -eq 0 ] \
-  && { pass=$((pass + 1)); echo "  ok    只有 chokepoint、沒有 LAYERS 的 conf 照常跑"; } \
-  || { fail=$((fail + 1)); echo "  FAIL  只設 chokepoint 的 repo 被誤判成沒有規則"; }
+  && { pass=$((pass + 1)); echo "  ok    兩層的 conf 照常跑"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  兩層的 conf 被誤判成沒有規則"; }
+
+# 欄位數對、pattern 欄空的規則不會跑。靜默 continue 的話它跟「這條很乾淨」一樣。
+_gateconf "" "features" 'all::::::label'
+_eo2=$(_gate --audit)
+case "$_eo2" in
+  *"pattern 欄是空的"*) pass=$((pass + 1)); echo "  ok    pattern 欄空的規則要出聲" ;;
+  *) fail=$((fail + 1)); printf '  FAIL  pattern 欄空的規則被靜默跳過\n        實得：%s\n' "$_eo2" ;;
+esac
+
+# ROOT 打錯一個字時每條 git grep 都配不到,而 layering 那半把 stderr 吞了。
+_gateconf "features core" "" ""
+sed -i.bak 's/^ROOT=.*/ROOT="libb"/' "$_sb3/hooks/arch-layers.conf" && rm -f "$_sb3/hooks/arch-layers.conf.bak"
+_ro=$(_gate --audit); _gaterc --audit; _rrc=$?
+{ [ "$_rrc" -ne 0 ] && [ -n "$_ro" ]; } \
+  && { pass=$((pass + 1)); echo "  ok    ROOT 不是目錄時出聲且非零"; } \
+  || { fail=$((fail + 1)); printf '  FAIL  ROOT 打錯照樣印 0 條違規\n        rc=%s 實得：%s\n' "$_rrc" "$_ro"; }
 rm -rf "$_sb3"
 
 echo "── Python IMPORT_RE（模板範例）──"

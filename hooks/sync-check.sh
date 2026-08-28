@@ -43,7 +43,9 @@ done
 #   2. **不存在不算漂移**:那只表示這台機器沒裝那道守門。對它出聲會讓每次 commit
 #      都噴一行與這次改動無關的東西,而噴幾次之後整支 sync-check 就沒人看了。
 UPAIRS='hooks/claim-check.py|skills/harness/claim-check/assets/claim-check.py'
-UROOT="${SYNC_CHECK_HOME:-$HOME}/.claude"
+# `$HOME` 未設(cron、某些 hook 環境)＋ `set -u` = 在這一行整支中止,而 repo 那半
+# 已經印完、pre-commit 又是 `|| true`,畫面上跟「一切正常」一模一樣。
+UROOT="${SYNC_CHECK_HOME:-${HOME:-/nonexistent}}/.claude"
 
 printf '%s\n' "$UPAIRS" | while IFS='|' read -r live src; do
     [ -n "$live" ] || continue
@@ -55,7 +57,7 @@ printf '%s\n' "$UPAIRS" | while IFS='|' read -r live src; do
     cmp -s "$UROOT/$live" "$src" || {
         printf '\033[33m⚠  sync-check：%s 與來源 %s 不一致\033[0m\n' "$UROOT/$live" "$src"
         printf '   這份在 repo 外面,git 看不到它——跑的是它,測試量的是來源。\n'
-        printf '   cp %s %s\n' "$src" "$UROOT/$live"
+        printf '   cp "%s" "%s"\n' "$src" "$UROOT/$live"
     }
 done
 

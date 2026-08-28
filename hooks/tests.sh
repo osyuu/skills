@@ -183,7 +183,21 @@ no "使用者層兩份一致時靜默" "claim-check.py" "$(_usync)"
 
 printf 'drifted\n' > "$UH/.claude/hooks/claim-check.py"
 ok "使用者層漂移要出聲" "不一致" "$(_usync)"
-ok "使用者層漂移要給得出 cp 指令" "cp skills/harness/claim-check/assets" "$(_usync)"
+# 路徑要加引號:`~/.claude` 被搬到含空白的家目錄時,沒引號的那行貼上去會壞。
+ok "使用者層漂移要給得出 cp 指令" 'cp "skills/harness/claim-check/assets' "$(_usync)"
+
+# `$HOME` 未設(cron、某些 hook 環境)＋ `set -u` = 在算 UROOT 那行整支中止,而 repo
+# 那半已經印完、pre-commit 又是 `|| true`——畫面上跟「一切正常」一模一樣。
+_no_home=$(env -u HOME -u SYNC_CHECK_HOME SYNC_CHECK_ROOT="$D" sh "$HOOKS/sync-check.sh" 2>&1 | strip)
+case "$_no_home" in
+  *unbound*) fail=$((fail+1)); printf '  FAIL  HOME 未設時整支中止\n        實得：%s\n' "$_no_home" ;;
+  *) pass=$((pass+1)); printf '  ok    HOME 未設時不中止\n' ;;
+esac
+
+# 裝著、來源卻不見了(skill 改名或被刪),跟「兩份一致」是兩件事,不能靜默。
+rm -f "$D/skills/harness/claim-check/assets/claim-check.py"
+ok "使用者層裝著但來源不見了要出聲" "不見了" "$(_usync)"
+printf 'same\n' > "$D/skills/harness/claim-check/assets/claim-check.py"
 
 # UPAIRS 一樣是手維護的。新增第三份使用者層副本卻忘了登記,漂移就再也沒人看。
 rm -f "$UH/.claude/hooks/claim-check.py"
@@ -191,6 +205,14 @@ mkdir -p "$D/skills/harness/newguard/assets"
 printf 'x\n' > "$D/skills/harness/newguard/assets/newguard-hook.py"
 printf 'x\n' > "$UH/.claude/hooks/newguard-hook.py"
 ok "沒登記進 UPAIRS 的使用者層副本要出聲" "不在 UPAIRS 裡" "$(_usync)"
+rm -f "$UH/.claude/hooks/newguard-hook.py" "$D/skills/harness/newguard/assets/newguard-hook.py"
+
+# 反查的比對要用 **-F**。少了它 `claim.check.py` 的 `.` 會當萬用字元配到 UPAIRS 裡的
+# `claim-check.py`,於是這支新腳本被當成已登記——漂移永遠沒人看,而且是靜默的。
+mkdir -p "$D/skills/harness/newguard/assets"
+printf 'x\n' > "$D/skills/harness/newguard/assets/claim.check.py"
+printf 'x\n' > "$UH/.claude/hooks/claim.check.py"
+ok "檔名裡的 . 不得當成萬用字元" "claim.check.py 在" "$(_usync)"
 rm -rf "$UH" "$SYNC_HOME_ISO"
 unset SYNC_CHECK_HOME
 

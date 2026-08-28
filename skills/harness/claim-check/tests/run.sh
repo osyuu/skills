@@ -11,6 +11,11 @@ set -u
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
       GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_COMMON_DIR GIT_CONFIG_PARAMETERS 2>/dev/null || true
 
+# checker 會讀使用者層的 `~/.claude/claim-check.conf`,而 skill 自己就在叫使用者去填它。
+# 不隔離的話「沒有 conf 時認不得 X」那幾條會在**填過 conf 的機器上**紅,而在這台
+# 剛好全綠只因為那份 conf 現在是空的。**跟 GIT_DIR 是同一個形狀,換了個變數名。**
+CLAIM_CHECK_HOME=$(mktemp -d)/.claude; mkdir -p "$CLAIM_CHECK_HOME"; export CLAIM_CHECK_HOME
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
 CHECK="$SKILL/assets/claim-check.py"
@@ -282,6 +287,90 @@ printf 'CLAIM_NAMED_EXT_RE=zig\n' > "$CONFDIR/claim-check.conf"
 ok "conf 補上副檔名之後點得到" "HIT" "$(named_probe 'because parser.zig does it')"
 ok "內建副檔名不會因此消失" "HIT" "$(named_probe 'because parser.dart does it')"
 rm -f "$CONFDIR/claim-check.conf"
+
+printf '\nconf 的四種壞法(每一種的失效都是靜默的)\n'
+# **空值不能登錄。** 模板是整份含全部 key 的,而 repo 那份先讀——「把模板複製到 repo」
+# 會讓每個沒填的 key 用空值蓋掉使用者層填好的那一份,工具鏈那半變恆開火、
+# 宣稱那半變恆不開火。
+printf 'CLAIM_TEST_RE=mix test\n' > "$CLAIM_CHECK_HOME/claim-check.conf"
+printf 'CLAIM_TEST_RE=\nCLAIM_BUILD_RE=go build\n' > "$CONFDIR/claim-check.conf"
+ok "repo 的空值不得蓋掉使用者層" "HIT" "$(conf_probe 'mix test')"
+rm -f "$CONFDIR/claim-check.conf" "$CLAIM_CHECK_HOME/claim-check.conf"
+
+# 行內註解。模板每個 key 上一行都寫著 `# 例:…`,補在同一行是很自然的寫法。
+printf 'CLAIM_TEST_RE=mix test  # elixir\n' > "$CONFDIR/claim-check.conf"
+ok "行內註解不得被吃進 pattern" "HIT" "$(conf_probe 'mix test')"
+rm -f "$CONFDIR/claim-check.conf"
+
+# 壞掉的 regex 只能廢掉它自己那一條。import 期 raise 的話整支 hook 一起死,
+# 而 Stop hook 死掉跟沒裝一樣看不出來——會踩到的正好是真的去編 conf 的人。
+printf 'CLAIM_TESTS_GREEN_CLAIM_RE=zig)|(evil\n' > "$CONFDIR/claim-check.conf"
+_bad=$(claim_probe 測試 '全套測試綠' 2>&1)
+ok "壞 regex 不得拖垮內建清單" "HIT" "$_bad"
+ok "壞 regex 要出聲" "CLAIM_TESTS_GREEN_CLAIM_RE" "$_bad"
+rm -f "$CONFDIR/claim-check.conf"
+
+# 尾端一個 `|`(複製貼上很容易留)會讓 pattern 配得到空字串 → 對每一段文字開火。
+printf 'CLAIM_TESTS_GREEN_CLAIM_RE=suite clean|\n' > "$CONFDIR/claim-check.conf"
+ok "配得到空字串的 conf 值要被擋掉" "MISS" "$(claim_probe 測試 'hello world' 2>/dev/null)"
+rm -f "$CONFDIR/claim-check.conf"
+
+# 模板給的例子本身不能造成靜默失效。裸 `make` 會讓
+# `git commit -m "make sure it works"` 算成 build 過 → build 規則恆不開火。
+grep -q '|make$' "$SKILL/assets/claim-check.conf.template" \
+  && { fail=$((fail+1)); printf '  FAIL  模板的 build 例子還留著裸 make\n'; } \
+  || { pass=$((pass+1)); printf '  ok    模板的 build 例子沒有裸 make\n'; }
+
+printf '\n宣稱 vs 提到(否定、疑問、計畫、轉述都不是宣稱)\n'
+# 英文沒有「已經／了／完」這種完成態標記,所以只能反過來排除。沒有這一層時
+# 十種最常見的英文形狀十中十誤中,而對七成回合開火的規則三天內會被關掉。
+make_transcript h1.jsonl "go" "Edit|/tmp/a.go" "T:I have not committed the changes yet."
+no "否定句不算 commit 過" "版控" "$(run h1.jsonl)"
+
+make_transcript h2.jsonl "go" "Edit|/tmp/a.go" "T:The upstream author committed the fix in 2019."
+no "講別人做的事不算自己 commit 過" "版控" "$(run h2.jsonl)"
+
+make_transcript h3.jsonl "go" "Edit|/tmp/a.go" "T:Next step: make sure tests are passing before merging."
+no "計畫句不算測試綠" "測試" "$(run h3.jsonl)"
+
+make_transcript h4.jsonl "go" "Edit|/tmp/a.go" "T:Their README claims all tests pass, but there is no CI."
+no "轉述文件不算測試綠" "測試" "$(run h4.jsonl)"
+
+make_transcript h5.jsonl "go" "Edit|/tmp/a.go" "T:Is it fixed? Let me verify."
+no "疑問句不算正確性宣稱" "正確性宣稱" "$(run h5.jsonl)"
+
+make_transcript h6.jsonl "go" "Edit|/tmp/a.go" "T:I merged the two config files by hand."
+no "merge 不是 git 的 merge 時不算" "版控" "$(run h6.jsonl)"
+
+# 反向:hedge 只能回看到**子句邊界**。整句回看的話下面這種前半是條件、後半是實打實
+# 宣稱的句子會被整個吃掉——那是把誤判換成漏抓,不是修好。
+make_transcript h7.jsonl "go" "Edit|/tmp/a.dart" "T:如果你想先收工,現在是個乾淨的斷點:測試全綠。"
+ok "條件子句不得吃掉後面的真宣稱" "測試" "$(run h7.jsonl)"
+
+printf '\n英文的自然說法(內建只是起點,但這幾種太常見不能漏)\n'
+make_transcript h8.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:All 75 tests pass."
+ok "數量詞插在中間也要認得" "測試" "$(run h8.jsonl)"
+
+make_transcript h9.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:Tests pass."
+ok "最短的說法也要認得" "測試" "$(run h9.jsonl)"
+
+# LGTM 是英文詞卻留在中文那條 branch,於是大小寫敏感——小寫是實際會打的那種。
+make_transcript h10.jsonl "go" "Edit|/tmp/a.go" "T:lgtm"
+ok "小寫 lgtm 也要認得" "正確性宣稱" "$(run h10.jsonl)"
+
+make_transcript h11.jsonl "go" "Edit|/tmp/a.go" "T:Pushed to feature/x."
+ok "推到非主幹分支也算 commit 宣稱" "版控" "$(run h11.jsonl)"
+
+printf '\n「帶受詞或帶狀態詞」——這是明著宣告過的不變式,要有反例守著\n'
+# 這三個字在英文技術對話裡到處都是。放寬成裸詞的話規則會對每一段文字開火。
+make_transcript h12.jsonl "go" "Edit|/tmp/a.go" "T:I fixed a typo in the comment while reading."
+no "fixed 沒有受詞時不算正確性宣稱" "正確性宣稱" "$(run h12.jsonl)"
+
+make_transcript h13.jsonl "go" "Edit|/tmp/a.go" "T:I added tests for that path."
+no "tests 沒有狀態詞時不算測試綠" "測試" "$(run h13.jsonl)"
+
+make_transcript h14.jsonl "go" "Edit|/tmp/a.go" "T:The merge strategy here is rebase."
+no "merge 沒有 safe/ready/good 時不算正確性宣稱" "正確性宣稱" "$(run h14.jsonl)"
 
 printf '\n被質疑後未查證\n'
 make_transcript t6.jsonl "為何要這樣？不對吧" "Bash|grep -n x DualTrackView.swift" \

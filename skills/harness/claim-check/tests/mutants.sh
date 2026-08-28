@@ -9,6 +9,11 @@ set -u
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
       GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_COMMON_DIR GIT_CONFIG_PARAMETERS 2>/dev/null || true
 
+# checker 會讀使用者層的 `~/.claude/claim-check.conf`,而 skill 自己就在叫使用者去填它。
+# 不隔離的話「沒有 conf 時認不得 X」那幾條會在**填過 conf 的機器上**紅,而在這台
+# 剛好全綠只因為那份 conf 現在是空的。**跟 GIT_DIR 是同一個形狀,換了個變數名。**
+CLAIM_CHECK_HOME=$(mktemp -d)/.claude; mkdir -p "$CLAIM_CHECK_HOME"; export CLAIM_CHECK_HOME
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKILL=$(cd "$HERE/.." && pwd)
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
@@ -67,15 +72,34 @@ mut "conf 的值有被附加上去"      "s.replace('extra = CONF.get(key, \"\")
 mut "repo 層的 conf 有被讀到"    "s.replace('Path(\"hooks/claim-check.conf\"),', '')"
 
 echo "── 英文詞表（只認一種語言＝另一種語言的 session 恆不開火）──"
-mut "測試的英文說法"             "s.replace(r'|(?i:\\ball tests? (pass|passed|passing|are green)\\b)', '')"
+mut "測試的英文說法"             "s.replace('tests? (all )?(pass|passed|passes|passing)', 'NEVERMATCHZZ')"
 mut "背景的英文說法"             "s.replace(r'|(?i:\\b(still|currently) running\\b)', '')"
-mut "commit 的英文說法"          "s.replace(r'|(?i:\\b(committed|merged) (it|them|this|that|the [a-z]+)\\b)', '')"
+mut "commit 的英文說法"          "s.replace('(committed|merged) (it|them|this|that', '(NEVERZZ) (it|them|this|that')"
 mut "正確性宣稱的英文說法"       "s.replace(r'|(?i:\\b(safe|ready|good) to merge\\b)', '')"
-mut "commit 英文要帶受詞"        "s.replace(r'(?i:\\b(committed|merged) (it|them|this|that|the [a-z]+)\\b)', r'(?i:\\b(committed|merged)\\b)')"
+mut "commit 英文要帶受詞"        "s.replace('(it|them|this|that', '(|it|them|this|that')"
 mut "背景英文要帶狀態詞"         "s.replace(r'(?i:\\b(still|currently) running\\b)', r'(?i:\\brunning\\b)')"
 mut "CHALLENGE 認得英文"         "s.replace(r'|(?i:\\bare you sure\\b)', '')"
 mut "CHALLENGE 不收裸的 why"     "s.replace(r'|(?i:\\bare you sure\\b)', r'|(?i:\\bwhy\\b)')"
 mut "NAMED 認得 .go"             "s.replace('swift|dart|py|ts|tsx|js|jsx|go', 'swift|dart')"
+
+echo "── 宣稱 vs 提到（沒有這層，英文那半十種形狀十中十誤中）──"
+mut "hedge 過濾整層拿掉"        "s.replace('if _is_claim(payload, m.start())', 'if True')"
+mut "hedge 只回看到子句邊界"    "s.replace('for m in CLAUSE_END.finditer(text[sent_start:at]):', 'for m in []:')"
+mut "疑問句不算 hedge"          "s.replace('.rstrip().endswith((', '.rstrip().startswith((')"
+
+echo "── 「帶受詞或帶狀態詞」——明著宣告過的不變式 ──"
+mut "fixed 要帶受詞"            "s.replace(r'|(?i:\\bfixed (it|that|the (bug|issue|problem))\\b)', r'|(?i:\\bfixed\\b)')"
+mut "tests 要帶狀態詞"          "s.replace('tests? (all )?(pass|passed|passes|passing)', 'tests?')"
+mut "merge 要帶 safe/ready/good" "s.replace('(safe|ready|good) to merge', 'merge')"
+mut "commit 的受詞要收斂"       "s.replace('|the (change|changes|fix|fixes|branch|PR|commit|patch|work))', '|the [a-z]+)')"
+mut "LGTM 不分大小寫"           "s.replace(r'|(?i:\\bLGTM\\b)', r'|LGTM')"
+
+echo "── conf 的四種壞法（每一種的失效都是靜默的）──"
+mut "空值不得登錄"              "s.replace('                if v:\n                    out.setdefault', '                if True:\n                    out.setdefault')"
+mut "行內註解要剝掉"            "s.replace('v = re.split(r\"\\\\s+#\", v, 1)[0].strip()', 'v = v.strip()')"
+mut "壞 regex 只廢自己那條"     "s.replace('    except re.error as exc:', '    except ZeroDivisionError as exc:')"
+mut "擋掉配得到空字串的值"      "s.replace('if re.compile(extra).match(\"\"):', 'if False:')"
+mut "conf 認得 CLAIM_CHECK_HOME" "s.replace('os.environ.get(\"CLAIM_CHECK_HOME\") or str(Path.home()', 'str(Path.home()')"
 
 echo "── 詞表的 conf 覆寫（換一種語言不該要改 code）──"
 mut "宣稱詞表走得到 conf"        "s.replace('\"CLAIM_TESTS_GREEN_CLAIM_RE\")', '\"__NEVER_A_CONF_KEY__\")')"

@@ -48,19 +48,35 @@ case "$ROOT$PACKAGE$IMPORT_RE$LAYERS$PARTITIONED$IGNORE" in
     exit 0 ;;
 esac
 
-# 填完 <TODO> 之後還有第二種「等於沒跑」:LAYERS 空著、CHOKEPOINTS 也沒有半條有效規則。
-# 那時下面兩個迴圈一次都不會進去,尾端照樣印「共 0 條違規」——與這個 repo 真的乾淨
-# 一模一樣。模板允許不適用的欄位留空,所以這個狀態是打得出來的,而它正是這支守門
-# 存在的理由本身:恆 0 的檢查比不裝更糟。處置與 <TODO> 同一條(只有 warn 能 exit 0)。
+# 填完 <TODO> 之後還有第二種「等於沒跑」。判準是**這次執行會不會發出任何一次
+# git grep**,不是「哪個欄位空著」——三個半邊各自獨立觸發:
+#   分層  需要 ≥2 層(只有一層時 higher 恆空,內層迴圈一次都不進)
+#   sibling 只看 PARTITIONED,**與 LAYERS 無關**
+#   必經點 只看 CHOKEPOINTS
+# 三個都不成立時,下面每個迴圈都不會進去,尾端照樣印「共 0 條違規」——與這個 repo
+# 真的乾淨一模一樣。模板允許不適用的欄位留空,所以這個狀態是打得出來的,而它正是
+# 這支守門存在的理由本身。處置與 <TODO> 同一條(只有 warn 能 exit 0)。
+: "${ROOT:=lib}" "${IGNORE:=__never_matches__}"
+
+nlayers=0
+for _l in ${LAYERS:-}; do nlayers=$((nlayers + 1)); done
 chk_rules=$(printf '%s\n' "${CHOKEPOINTS:-}" |
             sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -cv '^\(#.*\)\?$')
-if [ -z "$(printf '%s' "${LAYERS:-}" | tr -d '[:space:]')" ] && [ "$chk_rules" -eq 0 ]; then
-  echo "arch-guard: $conf 的 LAYERS 與 CHOKEPOINTS 都沒有規則 — 這次檢查等於沒跑" >&2
+if [ "$nlayers" -lt 2 ] &&
+   [ -z "$(printf '%s' "${PARTITIONED:-}" | tr -d '[:space:]')" ] &&
+   [ "$chk_rules" -eq 0 ]; then
+  echo "arch-guard: $conf 沒有任何規則會跑(分層要 ≥2 層、PARTITIONED 與 CHOKEPOINTS 都空) — 這次檢查等於沒跑" >&2
   [ "$mode" = "warn" ] || exit 1
   exit 0
 fi
 
-: "${ROOT:=lib}" "${IGNORE:=__never_matches__}"
+# ROOT 不存在時每一條 git grep 都配不到,而 layering 那半把 stderr 吞了(見下),
+# 於是輸出同樣是「共 0 條違規」。打錯一個字的 ROOT 與一個乾淨的 repo 分不出來。
+if [ ! -d "$ROOT" ]; then
+  echo "arch-guard: $conf 的 ROOT=$ROOT 不是一個目錄 — 每條規則都會配不到,這次檢查等於沒跑" >&2
+  [ "$mode" = "warn" ] || exit 1
+  exit 0
+fi
 
 count=0
 YEL='\033[33m'; RST='\033[0m'
@@ -127,7 +143,12 @@ for rule in $CHOKEPOINTS; do
   pat=$(printf   '%s' "$rule" | awk -F':::' '{print $2}')
   label=$(printf '%s' "$rule" | awk -F':::' '{print $3}')
   allow=$(printf '%s' "$rule" | awk -F':::' '{print $4}')
-  [ -z "$pat" ] && continue
+  # 欄位數對、但 pattern 欄是空的(`all::::::label`)。靜默 continue 的話這條規則
+  # 不存在而畫面上跟「它很乾淨」一樣,且欄位數檢查放它過去了。
+  if [ -z "$pat" ]; then
+    printf "${YEL}⚠  arch-guard config：pattern 欄是空的，這條規則不會跑${RST}\n    %s\n" "$rule"
+    continue
+  fi
   case "$cmode" in
     all|new) ;;
     *) printf "${YEL}⚠  arch-guard config：mode 只能是 all 或 new，已跳过：%s${RST}\n" "$rule"

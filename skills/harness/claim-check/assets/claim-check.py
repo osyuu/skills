@@ -58,21 +58,35 @@ def _touched(calls):
 # 這條順帶蓋住一個踩過的坑：還原注入的故障後沒重建就跑 test-without-building，
 # 拿到的是舊 binary 的結果（記在 feedback_hollow_tests）。
 
-def _conf():
-    """讀覆寫檔:先 repo 的 `hooks/claim-check.conf`,再使用者層的 `~/.claude/claim-check.conf`。
+def _warn(msg):
+    """conf 壞掉必須出聲。靜默退回內建等於「你補的那個生態不見了」而畫面沒變。"""
+    sys.stderr.write("⚠  claim-check：" + msg + "\n")
 
-    格式 `KEY=value`,一行一個,`#` 起頭是註解。
+
+def _conf():
+    """讀覆寫檔:先 repo 的 `hooks/claim-check.conf`,再使用者層的那份。
+
+    格式 `KEY=value`,一行一個,`#` 起頭是註解,` #` 之後是行內註解。
+
+    **空值不登錄。** `setdefault` 對「存在但空」一樣算數,而模板是整份含全部 key 的
+    ——把模板複製到 repo 就會讓 repo 那份的空值蓋掉使用者層填好的每一項,而工具鏈那半
+    會變成恆開火、宣稱那半變成恆不開火。
     """
     out = {}
-    for path in (Path("hooks/claim-check.conf"),
-                 Path.home() / ".claude" / "claim-check.conf"):
+    home = os.environ.get("CLAIM_CHECK_HOME") or str(Path.home() / ".claude")
+    for path in (Path("hooks/claim-check.conf"), Path(home) / "claim-check.conf"):
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                out.setdefault(k.strip(), v.strip().strip("'\""))
+                # 行內註解。模板每個 key 上一行都寫著 `# 例:…`,補在同一行是很自然的
+                # 寫法,而整段被吃進 pattern 之後那個 key 就靜默失效了。
+                # 要求 `#` 前面有空白,否則 regex 裡的 `#` 會被咬掉。
+                v = re.split(r"\s+#", v, maxsplit=1)[0].strip().strip("'\"")
+                if v:
+                    out.setdefault(k.strip(), v)
         except OSError:
             continue
     return out
@@ -92,9 +106,24 @@ def _re(builtin, key):
 
 
 def _re_src(builtin, key):
-    """同上，但回傳字串——要嵌進更大的 pattern 時用（NAMED 的副檔名那段）。"""
+    """同上，但回傳字串——要嵌進更大的 pattern 時用（NAMED 的副檔名那段）。
+
+    **壞掉的 conf 值只能廢掉它自己那一條。** 這裡不接住的話 `re.compile` 會在 import
+    期 raise,整支 hook 連同其他規則一起死——而 Stop hook 死掉跟沒裝一樣看不出來。
+    會踩到的正好是那些真的去編 conf 的人。
+    """
     extra = CONF.get(key, "").strip()
-    return builtin + ("|" + extra if extra else "")
+    if not extra:
+        return builtin
+    try:
+        # 配得到空字串的 pattern(尾端多一個 `|`,複製貼上很容易留)會對每一段文字開火。
+        if re.compile(extra).match(""):
+            raise re.error("配得到空字串")
+        re.compile(builtin + "|" + extra)
+    except re.error as exc:
+        _warn(f"conf 的 {key} 用不了（{exc}），這次退回內建清單")
+        return builtin
+    return builtin + "|" + extra
 
 
 RE_TEST = _re(
@@ -204,8 +233,11 @@ RULES = [
      "說了有東西在跑，但最近沒有啟動過背景工作或 agent"),
 
     ("測試",
+     # 原本寫成 `all tests pass`,要求 all 與 tests 相鄰,而 agent 報結果最常寫
+     # `all 75 tests pass` ——中間插一個數字就掉了。核心是 `tests <狀態詞>`,
+     # 前面有沒有 all／數量詞都不影響。
      _re(r"(測試綠|全套測試(都)?(綠|過)|測試通過|全綠|沒有失敗)"
-         r"|(?i:\ball tests? (pass|passed|passing|are green)\b)"
+         r"|(?i:\btests? (all )?(pass|passed|passes|passing)\b)"
          r"|(?i:\btests? (are |all )?(green|passing)\b)"
          r"|(?i:\b(test suite|suite) is green\b)"
          r"|(?i:\bno test failures\b)",
@@ -225,9 +257,13 @@ RULES = [
     ("版控",
      # 英文只認**帶受詞**的:`committed to quality` 這種用法沒有受詞,而它跟
      # 「我 commit 了」在字面上只差一個字。
+     # `the [a-z]+` 吃掉 `merged the two config files`(英文的 merge 常常不是 git 的)
+     # 與 git 歷史敘述,所以受詞收斂成版控名詞。
      _re(r"(已經? ?commit|commit 了|commit 完|已經? ?merge|merge 完|進版控了)"
-         r"|(?i:\b(committed|merged) (it|them|this|that|the [a-z]+)\b)"
-         r"|(?i:\bpushed to (main|develop|origin)\b)",
+         r"|(?i:\b(committed|merged) (it|them|this|that"
+         r"|the (change|changes|fix|fixes|branch|PR|commit|patch|work))\b)"
+         r"|(?i:\bpushed to \S+)"
+         r"|(?i:\bmerged (to|into) (main|develop|master)\b)",
          "CLAIM_COMMITTED_CLAIM_RE"),
      lambda ix: ix["git"] >= 0,
      "說了 commit/merge 已經做了，但這個 session 沒有跑過 git commit/merge"),
@@ -236,8 +272,9 @@ RULES = [
     # **限制先講明**:ix["bg"] 把 SendMessage 也算進去(跟隊友講句話就當成派過人),
     # 而且它看得到「有沒有派」、看不到「review 說了什麼」——抓得到的只有最裸的那種。
     ("正確性宣稱",
-     _re(r"(可以 merge|可以進 (develop|main)|驗證通過|改動正確|沒問題了|沒有問題|LGTM"
+     _re(r"(可以 merge|可以進 (develop|main)|驗證通過|改動正確|沒問題了|沒有問題"
          r"|修好了|沒有 regression|可以合了)"
+         r"|(?i:\bLGTM\b)"
          r"|(?i:\b(safe|ready|good) to merge\b)"
          r"|(?i:\bno regressions?\b)"
          r"|(?i:\b(this|that|it|the (bug|issue|problem))( is| was|'s)? (now )?fixed\b)"
@@ -255,6 +292,36 @@ RULES = [
      lambda ix: ix["test"] >= 0 and ix["edit"] >= 0,
      "說了注入故障，但沒有『改動 + 跑測試』的組合"),
 ]
+
+# 命中的那一句若是**否定、疑問、或在講別人做的事**,它就不是宣稱。
+# 沒有這一層時英文那半十種形狀十中十誤中(`I have not committed the changes`、
+# `Their README claims all tests pass`、`Is it fixed?`)——中文靠「已經／了／完」
+# 標記完成態,英文沒有任何完成態標記,只能反過來排除。
+# **只看命中位置之前**:句尾另一個子句裡的 `not` 管不到已經講出口的那半句。
+HEDGE = re.compile(
+    r"\b(not|never|whether|before|after|once|should|would|will|need to|make sure"
+    r"|claims?|says?|said|asked|upstream|assum\w+)\b|n't|如果|是否|還沒|尚未|要先|之前"
+    , re.I)
+SENT_END = re.compile(r"[.!?。！？\n]")
+# hedge 只回看到**上一個子句邊界**為止。整句回看的話
+# 「如果你想先收工,現在是個乾淨的斷點:所有東西都 commit 了、測試全綠」會被前面那個
+# 「如果」蓋掉——而後半是實打實的宣稱。疑問句仍以整句判定。
+CLAUSE_END = re.compile(r"[.!?。！？\n,;:，、；：]")
+
+
+def _is_claim(text, at):
+    """text 的 at 位置命中了某條規則——那一句話是不是一個宣稱。"""
+    sent_start = 0
+    for m in SENT_END.finditer(text[:at]):
+        sent_start = m.end()
+    end = SENT_END.search(text, at)
+    if text[sent_start:end.end() if end else len(text)].rstrip().endswith(("?", "？")):
+        return False
+    clause_start = sent_start
+    for m in CLAUSE_END.finditer(text[sent_start:at]):
+        clause_start = sent_start + m.end()
+    return not HEDGE.search(text[clause_start:at])
+
 
 # 被質疑的訊號。這種回合最容易生一段理由來守住已經講出口的結論。
 # 這條吃的是**使用者**的話,所以它的語言跟著使用者走,不跟著 code 走。
@@ -294,7 +361,9 @@ def check(events: list, user_text: str) -> list:
         ix = _index(calls)
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
-            if pat.search(payload) and not ok(ix):
+            hit = next((m for m in pat.finditer(payload)
+                        if _is_claim(payload, m.start())), None)
+            if hit and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
                     findings.append(f)
@@ -400,7 +469,9 @@ def check_scoped(events, cut, user_text):
         ix = _index(calls)
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
-            if pat.search(payload) and not ok(ix):
+            hit = next((m for m in pat.finditer(payload)
+                        if _is_claim(payload, m.start())), None)
+            if hit and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
                     findings.append(f)

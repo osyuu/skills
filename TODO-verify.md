@@ -16,12 +16,12 @@
 
 ## 已經跑過的（不用重跑，除非要挑戰結論）
 
-- 七支 skill 的 `tests/run.sh` 全綠：arch-guard 44/0、claim-check 75/0、
+- 七支 skill 的 `tests/run.sh` 全綠：arch-guard 51/0、claim-check 95/0、
   claude-md-hygiene 33/0、comment-budget 26/0、harness-audit 36/0、
   sdd-harness-init 14/0、handoff 9/0
-- 六支突變全綠：arch-guard 15/0、claim-check 27/0、claude-md-hygiene 10/0、
-  comment-budget 6/0、sdd-harness-init 3/0、hooks 25/0
-- `hooks/tests.sh` 26/0
+- 六支突變全綠：arch-guard 21/0、claim-check 40/0、claude-md-hygiene 10/0、
+  comment-budget 6/0、sdd-harness-init 3/0、hooks 28/0
+- `hooks/tests.sh` 29/0
 
 **全綠證明不了這批是對的**——`harness-audit` 量過同一個 repo：190 條斷言綠著，
 同時有 8 個 P0 活著,因為 fixture 用的正好是 pattern 清單寫的時候看的那兩個技術棧。
@@ -50,20 +50,26 @@ zsh **不對未加引號的參數展開做字詞切分**，整串被當成一個
 sh／bash 正常，所以讀 code 看不出來。改成 shell 函式，在 sh／bash／zsh ×
 `set -u` × `set -f` × `EXTENDED_GLOB` × `IFS=,` 下全部實跑通過。
 
-### 5. arch-guard audit 的非零路徑 — **原問題清白，但量到另一個洞**
+### 5. arch-guard audit 的非零路徑 — **主結論成立，「沒有第三種」不成立**
 - 已填 conf ＋ 有違規時 audit 仍 exit 0（尾端無條件 `exit 0`）→ install.sh
-  那句「A non-zero exit means step 1 is not finished」成立。
-- 沒有第三種非零路徑：壞 regex 讓 `git grep` fatal（訊息進 stderr，設計如此）、
-  壞掉的 conf source 失敗，兩者都仍 exit 0。
-- **新洞**：`LAYERS=""` ＋ 沒有半條 chokepoint 是模板允許打出來的狀態，而那時兩個
-  迴圈一次都不會進去、尾端照印「共 0 條違規」exit 0——與這個 repo 真的乾淨一模一樣。
-  處置與未填 `<TODO>` 同一條（出聲；只有 warn 能 exit 0）。註解不算規則。
-  四個方向各一條測試 ＋ 三條注入。
+  那句「A non-zero exit means step 1 is not finished」在**正常路徑上**成立。
+- **「沒有第三種非零路徑」是錯的**（review 抓到）。至少三條：conf **不可讀**時
+  `.` 失敗使 shell 直接中止，audit rc=1 **而且一個 arch-guard 訊息都沒印**——那句
+  install.sh 的話在這條路上是誤導；conf 裡有 `exit 3` 則 rc=3 原樣傳出。
+  conf 有語法錯誤時變數全沒設，現在會被下面那道閘攔下並回非零，但訊息說的是
+  「沒有規則會跑」而**真正的原因是語法錯誤**。
+- **新洞**：模板允許不適用的欄位留空，於是「沒有任何規則會跑」是打得出來的狀態，
+  而那時每個迴圈都不會進去、尾端照印「共 0 條違規」exit 0——與真的乾淨一模一樣。
 
-### 6. `tests/run.sh` 新加的兩條會不會污染後面 — **清白**
-- 每個 `cd` 都帶 `|| exit 1`，走不到就整支中止，不會在錯的目錄跑。
+### 6. `tests/run.sh` 新加的兩條會不會污染後面 — **結論成立，理由原本寫錯**
 - 換成 `exit 1` stub 的那份是 `newrepo2` 開的獨立沙箱，而且是檔案裡最後一條斷言，
-  後面只剩 `cd "$WORK"` 與統計；`trap rm -rf "$WORK"` 收尾。沒有後續使用者。
+  後面只剩 `cd "$WORK"` 與統計。沒有後續使用者。
+- 原本寫的理由「每個 `cd` 都帶 `|| exit 1`」**字面不成立**（review 抓到）：檔裡有
+  十個 `cd` 沒帶。它們安全是因為全在 `$( )` / `( )` 子 shell 裡且用 `&&` 串——
+  失敗就不會執行、也污染不到父層 cwd。**理由寫錯的代價是下一個在頂層加 `cd` 的人
+  會以為有人在守**，所以這裡改正。
+- 順帶修掉：`_sb`/`_sb2`/`_sb3` 原本開在 `$TMPDIR` 靠明寫的 `rm -rf` 收，
+  中途中斷會留下三個目錄；改開在 `$WORK` 底下，由既有的 `trap` 收。
 
 ### 7. dev-loop 的新措辭有沒有製造死結 — **成立（措辭），已改**
 沒有死結，但原文要求「知道哪一輪是最後一輪」，而那只有事後才知道。
@@ -89,17 +95,78 @@ code，照〈完成的定義〉第 2 條本來就要再派一輪，那一輪的�
   改成「內建 ＋ conf 附加」，內建補上英文，conf 鍵是 `CLAIM_*_CLAIM_RE`。
   安裝器現在也把 conf 模板佈到 `~/.claude/claim-check.conf`（不覆蓋）——**沒佈出去的話
   這條路只存在於 SKILL.md 裡等人去找**，而它守的正是「恆不開火」那一半。
-  - **英文那半沒有真實 session 的校準基準**：這台的 46 份紀錄全是中文 session。
-    量得到的只有「英文詞表沒有在中文 session 上多開火」——加之前 128/656（19%），
-    加之後 129/656（19%），多的那一次是 PitchMonitor 裡一句真的英文宣稱
-    （`Baseline locked: 475 tests green`，而其後又改過 code）。**英文 session 的誤判率
-    量不到，換一台請在英文 session 上回放一次再收緊或放寬。**
+  - **英文那半沒有真實 session 的校準基準**：這台的紀錄全是中文 session。
+    量得到的只有「英文詞表沒有在中文 session 上多開火」（128→129/656）。
+    reviewer 進一步量出這個數字的**樣本數**：2637 段 assistant 文字裡，19 條英文
+    alternative 總共只匹配 17 次，其中 14 次是舊版就認得的 `BUILD SUCCEEDED`——
+    真正「新變得認得」的只有 **3 段**。所以那是三個資料點的量測，不是 656 回合的。
+    **英文 session 的誤判率仍然量不到，換一台請在英文 session 上回放再收緊或放寬。**
   - 英文那半收得比中文緊是刻意的（要求帶受詞或狀態詞），三條反例是那個要求的守護者。
 - **`sync-check.sh` 不涵蓋使用者層的部署副本**。加了 `UPAIRS` 那半：
   不存在＝沒裝，不出聲；存在且不一致才出聲並給 cp 指令；另有反查抓沒登記的。
   跑起來當場抓到 `~/.claude/hooks/claim-check.py` 落後來源 83 行（就是 TODO 說「今天犯過」
   的那次），已 `cp` 同步。測試用 `SYNC_CHECK_HOME` 隔離，**否則這支測試會去量這台機器
   實際裝了什麼**，換一台就換一個結果。
+
+## 第二輪外審（`626ae93`，兩個唯讀 agent）
+
+`review-shell` 交回 2 個 P1 ＋ 10 個 P2，全部重現後修掉；四項判斷被它逐條攻不破
+（`$G` 的五個 shell 維度、dev-loop 的收斂性、數字改寫的可判定性、`SYNC_CHECK_HOME`
+的隔離是承重的）。**最貴的一條是我自己引入的**：
+
+- **P1-1 新閘誤殺 `PARTITIONED`-only 的 conf**。sibling 那半只看 `PARTITIONED`、
+  **與 `LAYERS` 無關**，而我的條件只看 `LAYERS` 與 `CHOKEPOINTS`。一份抓得到
+  sibling 違規的 conf 被整個關掉，warn 模式下畫面只有一行 stderr——我加的守門
+  變成了它自己要防的那個東西。判準改成**「這次執行會不會發出任何一次 git grep」**：
+  分層要 ≥2 層、`PARTITIONED` 非空、`CHOKEPOINTS` 有有效規則，三者皆不成立才出聲。
+- **P1-2 單一 layer 等於零檢查**（`higher` 恆空），而我為了修測試把 `LAYERS_V`
+  改成 `"core"`，正好讓那條斷言躺進零檢查狀態、斷言一個必然。改成兩層 ＋ 期望
+  `共 1 條違規`。
+- P2-3 `all::::::label`（pattern 欄空）被靜默 `continue`；現在出聲。
+- P2-4 `$HOME` 未設 ＋ `set -u` → sync-check 在算 `UROOT` 那行整支中止，而 repo
+  那半已印完、pre-commit 又是 `|| true`——畫面跟正常一模一樣。改 `${HOME:-/nonexistent}`。
+- P2-5 **`—` 放進 `[...]` 在 `LC_ALL=C` 下失效**（bracket expression 是位元組集合），
+  於是 SKILL.md 那段點名要擋的 `sed 's/$/\t—/'` 鑽法從 C locale 穿過去。移出自成分支。
+- P2-11 ROOT 打錯一個字時每條 grep 都配不到而 stderr 被吞，同樣印「共 0 條違規」。加檢查。
+- P2-8/P2-9 六條注入全綠（無守護者）＋ 兩條注入因錯的原因轉紅。測試 44→51、
+  注入 15→21；hooks 測試 26→29、注入 25→28。
+- 修 P2-11 時**新的 ROOT 閘遮住了既有的 `<TODO>` 守護者**（模板的
+  `ROOT="<TODO-source-root>"` 讓 ROOT 的訊息也含 `<TODO`，needle 太寬）——
+  注入當場抓到，needle 收緊成「還有未填的 `<TODO>`」。
+
+`review-regex` 交回 4 個 P1 ＋ 6 個 P2，五項判斷被它逐條攻不破（25 處
+`(?i:)` 改寫做了結構／差分／大小寫翻轉三種核對後 0 差異；NAMED 擴張的
+128→129 它自己重跑後確認、並用「把副檔名還原成 `swift|dart`」證明那個 +1
+與擴張無關；`${3:-…}` 在四種 shell 下正確；`zig)|(evil` 是出聲不是靜默；
+模板 11 個 key 的例子除 `make` 外全部實跑可用）。
+
+- **P1-1 repo 那份 conf 的空值靜默蓋掉使用者層**。`setdefault` 對「存在但空」
+  一樣登錄，而模板是整份含全部 key 的——**把模板複製到 repo ＝ 清空 home 的全部
+  設定**，而這次 commit 正好教人這樣做。空值不再登錄。
+- **P1-2 測試不隔離 `$HOME`**，所以「沒有 conf 時認不得 X」那幾條會在**填過 conf 的
+  機器上**紅，而這台剛好全綠只因為那份 conf 現在是空的；`mutants.sh` 的基準檢查會
+  直接 `exit 2`，整套突變在那台機器上永遠跑不起來。**與 GIT_DIR 是同一個形狀，
+  換了個變數名。** 兩支測試都改成 export 一個空的 `CLAIM_CHECK_HOME`。
+- **P1-3 英文誤中，十種形狀十中十**（`I have not committed the changes`、
+  `Their README claims all tests pass`、`Is it fixed?`、`I merged the two config files`）。
+  中文靠「已經／了／完」標記完成態，英文沒有，只能反過來排除：加一層**句子層的
+  否定／疑問／轉述過濾**，hedge 只回看到**子句邊界**（整句回看會把
+  「如果你想先收工，現在是個乾淨的斷點：測試全綠」整條吃掉）。受詞也從
+  `the [a-z]+` 收斂成版控名詞。
+- **P1-4 恆不開火的殘量**：`lgtm` 小寫 MISS（`LGTM` 留在中文那條 branch、大小寫敏感）、
+  `All 75 tests pass.` MISS、`Pushed to feature/x.` MISS。補上，並在 SKILL.md 明說
+  **英文內建也只是起點**——原本的措辭讀起來像英文已經蓋好了。
+- P2-1 conf 行內註解被吃進 pattern；P2-2 壞 regex 在 import 期 raise → **整支 hook
+  一起死**，而 Stop hook 死掉跟沒裝一樣；P2-3 值尾端一個 `|` 會配得到空字串 →
+  對每一段文字開火；P2-4 `CLAIM_CHECK_HOME` ≠ `~/.claude` 時佈出去的 conf 永遠讀不到；
+  P2-5 **模板自己給的 `make` 例子**會讓 `git commit -m "make sure it works"` 算成
+  build 過 → build 規則恆不開火。
+- P2-6 明著宣告過的「帶受詞或帶狀態詞」只有三處有反例守著。補齊後才發現
+  `(\d+ )?` 那段是**死的**（前綴都是選用的，核心 `tests pass` 本來就配得到），
+  簡化掉。claim-check 測試 75→95、注入 27→40。
+
+**hedge 過濾對真實語料的影響量過**：48 份紀錄、661 回合，finding 169→168，
+唯一被抑制的是「以及 Pro target **是否**仍 build 成功」——正確的抑制。
 
 ## 這一輪自己的待驗
 
@@ -108,4 +175,7 @@ code，照〈完成的定義〉第 2 條本來就要再派一輪，那一輪的�
   `sync-check` 的比對範圍內——`*.conf` 刻意排除，因為那是每個人各自調的。
   代價是模板改了、既有的那份不會跟上，而沒有任何東西會說。
 - arch-guard 的「沒有規則可跑」判定用 `grep -cv '^\(#.*\)\?$'` 數有效行。
-  BSD grep 下實跑正確，GNU 下沒驗（同 Linux 那條）。
+  BSD grep 2.6.0 與 ugrep 7.8.4 下實跑正確，**GNU grep 沒驗**（同 Linux 那條）。
+- `P2-5` 的 locale 修法在 BSD awk 的 C 與 UTF-8 兩個 locale 下實跑一致，
+  **gawk / mawk 沒驗**——那是 POSIX bracket expression 的 locale 語意、不是實作差異，
+  但仍是推論。

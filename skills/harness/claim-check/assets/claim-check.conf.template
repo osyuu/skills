@@ -10,7 +10,10 @@
 # 跑測試的指令。例:mix test|zig build test|bundle exec rspec|./gradlew test
 CLAIM_TEST_RE=
 
-# build 的指令。例:dotnet build|mvn package|cargo build|npm run build|make
+# build 的指令。例:dotnet build|mvn package|cargo build|npm run build
+# 短詞一定要自己加詞界:`make` 直接寫進去的話,`git commit -m "make sure it works"`、
+# `cmake --version`、`grep -rn maketest` 全部算成 build 過——這條規則就變成恆不開火。
+# 要寫成 (?<![\w.])make(?![\w.])。**例子只是起點,詞界要自己補。**
 CLAIM_BUILD_RE=
 
 # 會改動原始碼的指令(codegen、formatter、fixer)與副檔名。
@@ -23,7 +26,7 @@ CLAIM_MUTATE_RE=
 # 而後者跟「這個 session 很誠實」在畫面上完全一樣,不會有人來跟你說。
 #
 # 內建中英各一半。**第三種語言、團隊自己的口頭禪、翻譯腔,一律得補在這裡。**
-# 一樣是**附加**到內建清單,不取代。每項都是 regex,不區分大小寫要自己寫 (?i:...)。
+# 一樣是**附加**到內建清單,不取代。每項都是 regex,不區分大小寫要自己寫 (?i:...)。\n# **不能寫行內註解以外的 `#`**:` #` 之後的東西會被當成註解剝掉。\n# 壞掉的 regex 只會廢掉它自己那一條(會在 stderr 出聲),不會拖垮其他規則。
 
 # 「有東西正在背景跑」。例:バックグラウンドで実行中|läuft noch
 CLAIM_RUNNING_CLAIM_RE=
