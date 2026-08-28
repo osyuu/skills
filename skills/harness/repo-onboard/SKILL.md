@@ -28,7 +28,7 @@ description: >-
 | 既有慣例 | `CLAUDE.md` / `AGENTS.md` 與它們 `^@` import 進來的檔、repo 自己的規範文件(`CONTRIBUTING.md`、`docs/`、`conventions/` 之類)、各生態自己的 linter 設定檔 | 這個 repo 適用的 review skill,它的 checklist 哪幾條要**以專案為準** |
 | 工作進料 | `git remote -v`、有沒有 issue tracker 相關的本機 skill、本機的暫存/筆記目錄(有的話) | 需求從哪來 |
 | 版控佈局 | `git rev-parse --git-common-dir`、`git worktree list` | 是不是 linked worktree(`.git` 是檔案,`.git/info/exclude` 追加會失敗) |
-| session 語言 | 使用者的常駐指南、近期對話 | 宣稱詞表要哪一種語言——**只認一種語言的規則,在另一種語言的 session 永遠零開火**。⚠️ 這一項目前**per-repo 設不了**:認宣稱的守門裝在使用者層、詞表寫死在 code 裡。探測結果只能寫進 profile 給人看,並在第 5 步用**這個 session 的語言**造違規來驗 |
+| session 語言 | 使用者的常駐指南、近期對話 | 宣稱詞表要哪一種語言——**只認一種語言的規則,在另一種語言的 session 永遠零開火**。內建中英各一半,其餘語言填進 `claim-check.conf` 的 `CLAIM_*_CLAIM_RE`(repo 的 `hooks/` 或使用者層的 `~/.claude/` 都讀得到)。第 5 步一律用**這個 session 的語言**造違規來驗 |
 
 上面那張表是**起點,不是窮舉**。用一條指令列全,深度無關:
 
@@ -46,15 +46,22 @@ git ls-files --full-name ':/' | grep -E '(^|/)(pubspec\.yaml|package\.json|pnpm-
 所以**再做一次不依賴清單的探測**,把判斷權從清單交回現場:
 
 ```sh
-G="git -c core.quotepath=off ls-files --full-name :/"   # quotepath 關掉,否則非 ASCII 路徑會被加引號
-$G | grep / | sed 's#/.*##' | sort -u                  # top-level 目錄(grep / 濾掉根目錄的檔案)
-$G | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | sort | uniq -c | sort -rn
+G() { git -c core.quotepath=off ls-files --full-name ":/"; }  # quotepath 關掉,否則非 ASCII 路徑會被加引號
+G | grep / | sed 's#/.*##' | sort -u                          # top-level 目錄(grep / 濾掉根目錄的檔案)
+G | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | sort | uniq -c | sort -rn
 ```
 
+**要用函式不能用 `G="git …"` 再 `$G`**:zsh 不對未加引號的參數展開做字詞切分,整串會被
+當成一個指令名,回 `no such file or directory: git -c core.quotepath=off …`。這條探測是
+給人貼進自己的 shell 跑的,而預設 shell 是 zsh 的機器不在少數。
+
 **問到哪裡為止**:副檔名只問**出現 ≥ 3 個檔**的那些,top-level 目錄則每個都問。
-不設界線這一步會爆掉——一個真 repo 量過是 43 種副檔名、16 個 top-level 目錄,
-而副檔名那半大多是 `png`/`ttf`/`gitkeep` 這種與建置鏈無關的;≥3 把它砍到 20。
+不設界線這一步會爆掉,而副檔名那半大多是 `png`/`ttf`/`gitkeep` 這種與建置鏈無關的。
 沒有界線時 agent 會自己決定跳過哪些,而跳過的理由不會寫下來。
+
+**別把總數當預期值**:同一台機器上量十個 repo,副檔名 6–43 種、top-level 目錄 1–7 個
+(另有一個 16 的),`≥3` 砍掉的比例在 38%–70% 之間。差一個數量級的東西不能寫成
+「大約幾種」讓人拿來對照——界線是 `≥3` 這條規則本身,不是任何一個總數。
 
 **這一步防的是部分命中**——`api/go.mod` + `web/package.json` + `svc/Payments.csproj` 的 repo,
 前兩個認得就容易當成盤點完了。**缺席不是 `<TODO>`**,所以只查 TODO 的檢查看不到它;
@@ -134,7 +141,7 @@ pre-commit 型,Stop / PostToolUse 型要用該 skill 自己的方式(例如 `--r
    ```sh
    cut -f1 <盤點區> > /tmp/classified
    grep -Fxv -f /tmp/classified <那條指令的輸出>   # 漏歸類的會被印出來
-   awk -F'\t' 'NF < 2 || $2 ~ /^[[:space:]]*$/' <盤點區>   # 空殼歸類會被印出來
+   awk -F'\t' 'NF < 2 || $2 ~ /^[[:space:]]*([-?—]|[Tt][Oo][Dd][Oo]|<[^>]*>|[Nn]\/[Aa])?[[:space:]]*$/' <盤點區>   # 空殼歸類會被印出來
    ```
 
    **判準是「兩條都無輸出」,不是 exit 0**——`grep` 沒命中時回 1,串成 `&&` 會反過來。
@@ -144,6 +151,11 @@ pre-commit 型,Stop / PostToolUse 型要用該 skill 自己的方式(例如 `--r
    出的是 byte order——不一致時它**不報錯**,直接給錯答案,而錯的方向是把已歸類的
    誤報成漏掉。第二條擋的是反方向的鑽法:單向包含允許 `git ls-files | sed 's/$/\t—/'`
    把整個 repo 倒進去,集合條件恆滿足而一行都沒真的歸類。)
+
+   **第二條擋的比看起來多一種**:`cut -f1` 對**沒有 TAB 的行**輸出整行,於是一行
+   純路徑會被第一條算成「已歸類」——那一種只有 `NF < 2` 看得到。佔位符那一串
+   (`—` `-` `?` `TODO` `<…>` `n/a`)是量過會被寫出來的實際內容;有字但等於沒歸類
+   仍然填得出新的花樣,這條擋的是已知的那幾種,不是全部。
 5. `CLAUDE.md` 有指標指向 conf,而且**在 linked worktree 裡也指得到**——git-excluded 的目標
    對隊友、對自己的 worktree 都是懸空指標,而「開了新 worktree」正是這支要服務的情境之一。
 

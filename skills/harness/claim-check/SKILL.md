@@ -36,7 +36,16 @@ sh <skill-dir>/scripts/install.sh
 
 寫 `~/.claude/hooks/claim-check.py`，把 `Stop` hook **附加**進 `~/.claude/settings.json`（不覆蓋既有的 Stop hook，覆蓋等於靜默停用別人的）。
 
-**2. 先 warn，拿真實對話回放定基準**——這步不要跳過：
+**2. 補這個 repo 與這個 session 的詞表**（`assets/claim-check.conf.template` → `hooks/claim-check.conf`
+或 `~/.claude/claim-check.conf`，值是**附加**不取代）。**這步跳過的代價是靜默的**，而且兩個方向相反：
+
+- **工具鏈**沒認出來（`CLAIM_TEST_RE` / `CLAIM_BUILD_RE` / `CLAIM_MUTATE_RE`）→ 跑了也判成沒跑 → **恆開火**，輸出與事實無關。
+- **宣稱說法**沒認出來（`CLAIM_*_CLAIM_RE`）→ **恆不開火**，而那跟「這個 session 很誠實」在畫面上一模一樣。內建只有中英兩種語言。
+
+第二種沒有人會來回報，所以它比第一種危險。**先用這個 session 實際會講的那句話回放一次**，
+確認它認得——不是讀 pattern 判斷。
+
+**3. 先 warn，拿真實對話回放定基準**——這步不要跳過：
 
 ```
 python3 ~/.claude/hooks/claim-check.py --replay ~/.claude/projects/<proj>/<session>.jsonl
@@ -44,7 +53,7 @@ python3 ~/.claude/hooks/claim-check.py --replay ~/.claude/projects/<proj>/<sessi
 
 **對七成回合開火＝噪音，會被學會忽略；完全不開火＝等於沒裝。** 一個 424 回合的真實 session 校準到 15%，其中兩條規則（測試／build）貢獻了三分之二的開火而真陽性未經確認——那正是 warn 期要判的東西。
 
-**3. 每條規則都拿得出真陽性，才切成擋**：`export CLAIM_CHECK_BLOCK=1`。判準不是「感覺誤判變少了」，是逐條過——舉不出真陽性的規則，warn 期結束就砍掉、不要帶進擋的模式（見〈規則怎麼設計〉末段）。**擋在高誤判率下，人會直接關掉整個 hook**，那比沒裝還糟。擋下來的成本是 agent 多跑一次，不是使用者的時間。
+**4. 每條規則都拿得出真陽性，才切成擋**：`export CLAIM_CHECK_BLOCK=1`。判準不是「感覺誤判變少了」，是逐條過——舉不出真陽性的規則，warn 期結束就砍掉、不要帶進擋的模式（見〈規則怎麼設計〉末段）。**擋在高誤判率下，人會直接關掉整個 hook**，那比沒裝還糟。擋下來的成本是 agent 多跑一次，不是使用者的時間。
 
 ## 規則怎麼設計（這比腳本值錢）
 
@@ -69,5 +78,5 @@ python3 ~/.claude/hooks/claim-check.py --replay ~/.claude/projects/<proj>/<sessi
 ## 品質自檢
 
 - 裝完有沒有拿真實對話回放過？開火率落在哪？
-- 每條規則都舉得出**這個 session 裡**的一個真陽性嗎？（這是切成擋的前提，見流程 3）
+- 每條規則都舉得出**這個 session 裡**的一個真陽性嗎？（這是切成擋的前提，見流程 4）
 - 規則是對著「自己的假話」調的，還是照抄別人的樣本？後者不會準。

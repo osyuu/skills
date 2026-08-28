@@ -129,6 +129,10 @@ out=$(cd "$D" && sh hooks/comment-budget-check.sh 2>&1 | strip)
 no "沒超標時靜默" "註解預算" "$out"
 
 echo "── sync-check ──"
+# 這支會讀使用者層的 `~/.claude/hooks/`,那是**這台機器實際裝了什麼**。不隔離的話
+# 同一支測試在裝過 claim-check 的機器紅、沒裝的機器綠,而兩邊都不是在量這支腳本。
+SYNC_HOME_ISO=$(mktemp -d); mkdir -p "$SYNC_HOME_ISO/.claude/hooks"
+export SYNC_CHECK_HOME="$SYNC_HOME_ISO"
 D=$(newrepo)
 mkdir -p "$D/.claude/hooks" "$D/skills/harness/claude-md-hygiene/assets" "$D/hooks" "$D/skills/harness/comment-budget/assets"
 printf 'same\n' > "$D/.claude/hooks/claude-md-hygiene-hook.py"
@@ -156,6 +160,39 @@ printf 'x\n' > "$D/hooks/newguard-check.sh"
 printf 'x\n' > "$D/skills/harness/newguard/assets/newguard-check.sh"
 out=$(SYNC_CHECK_ROOT="$D" sh "$HOOKS/sync-check.sh" 2>&1 | strip)
 ok "沒登記進 PAIRS 的部署副本要出聲" "不在 PAIRS 裡" "$out"
+
+# 使用者層(`~/.claude/hooks/`)的部署副本。它在 repo 外面,git 完全看不到,
+# 所以「改了來源忘了同步」在這裡是**永遠沉默**的——實際犯過一次。
+D=$(newrepo)
+mkdir -p "$D/skills/harness/claim-check/assets" "$D/.claude/hooks" "$D/hooks"
+mkdir -p "$D/skills/harness/claude-md-hygiene/assets" "$D/skills/harness/comment-budget/assets"
+printf 'same\n' > "$D/.claude/hooks/claude-md-hygiene-hook.py"
+printf 'same\n' > "$D/skills/harness/claude-md-hygiene/assets/claude-md-hygiene-hook.py"
+printf 'same\n' > "$D/hooks/comment-budget-check.sh"
+printf 'same\n' > "$D/skills/harness/comment-budget/assets/comment-budget-check.sh"
+printf 'same\n' > "$D/skills/harness/claim-check/assets/claim-check.py"
+UH=$(mktemp -d); mkdir -p "$UH/.claude/hooks"
+_usync() { SYNC_CHECK_ROOT="$D" SYNC_CHECK_HOME="$UH" sh "$HOOKS/sync-check.sh" 2>&1 | strip; }
+
+# 沒裝 = 這台機器沒有那道守門,不是漂移。對它出聲的話每次 commit 都噴一行無關的東西,
+# 噴幾次整支就沒人看了——這條守的是「不出聲」,而不出聲是最容易被改掉的行為。
+no "使用者層沒裝時不出聲" "claim-check.py" "$(_usync)"
+
+printf 'same\n' > "$UH/.claude/hooks/claim-check.py"
+no "使用者層兩份一致時靜默" "claim-check.py" "$(_usync)"
+
+printf 'drifted\n' > "$UH/.claude/hooks/claim-check.py"
+ok "使用者層漂移要出聲" "不一致" "$(_usync)"
+ok "使用者層漂移要給得出 cp 指令" "cp skills/harness/claim-check/assets" "$(_usync)"
+
+# UPAIRS 一樣是手維護的。新增第三份使用者層副本卻忘了登記,漂移就再也沒人看。
+rm -f "$UH/.claude/hooks/claim-check.py"
+mkdir -p "$D/skills/harness/newguard/assets"
+printf 'x\n' > "$D/skills/harness/newguard/assets/newguard-hook.py"
+printf 'x\n' > "$UH/.claude/hooks/newguard-hook.py"
+ok "沒登記進 UPAIRS 的使用者層副本要出聲" "不在 UPAIRS 裡" "$(_usync)"
+rm -rf "$UH" "$SYNC_HOME_ISO"
+unset SYNC_CHECK_HOME
 
 echo
 echo "通過 ${pass}，失敗 ${fail}"

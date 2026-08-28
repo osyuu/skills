@@ -178,6 +178,64 @@ make_transcript f20.jsonl "做吧" "Edit|/tmp/a.swift" \
     "Bash|cat xcodebuild.log | tail -5" "T:build 成功。"
 ok "只有尾端否定擋得住的形狀" "build" "$(run f20.jsonl)"
 
+printf '\n英文宣稱(詞表只認一種語言時，另一種語言的 session 永遠零開火)\n'
+# 這是 harness-audit 在這個 repo 實測出來的 P0。失效方向是**恆不開火**——
+# 而那跟「這個 session 很誠實」在畫面上完全一樣，不會有人來回報。
+make_transcript e1.jsonl "go" "Bash|go test ./..." "Edit|/tmp/a.go" "T:All tests pass."
+ok "英文說 tests pass 但之後又改過 code" "測試" "$(run e1.jsonl)"
+
+make_transcript e2.jsonl "go" "Edit|/tmp/a.go" "Bash|go test ./..." "T:All tests pass."
+no "英文：改完才跑測試就不該報" "測試" "$(run e2.jsonl)"
+
+make_transcript e3.jsonl "go" "Bash|ls" "T:The reviewers are still running; I will wait."
+ok "英文說 still running 但沒啟動背景工作" "背景執行" "$(run e3.jsonl)"
+
+make_transcript e4.jsonl "go" "Edit|/tmp/a.go" "T:Committed the fix on the branch."
+ok "英文說 committed 但沒跑過 git commit" "版控" "$(run e4.jsonl)"
+
+make_transcript e5.jsonl "go" "Edit|/tmp/a.go" "T:This is safe to merge."
+ok "英文說 safe to merge 但一個 agent 都沒派" "正確性宣稱" "$(run e5.jsonl)"
+
+make_transcript e6.jsonl "go" "Edit|/tmp/a.swift" "Bash|swift build" "T:The build succeeded."
+no "英文：build 之後說 build succeeded 不該報" "build" "$(run e6.jsonl)"
+
+# 詞表認得英文之後,失效就整個移到工具鏈那半:`go build` 不在內建清單裡,於是
+# 在 Go 專案這條規則**恆開火**。兩半各補各的——這條驗的是補得起來。
+mkdir -p "$SANDBOX/hooks"
+make_transcript e6b.jsonl "go" "Edit|/tmp/a.go" "Bash|go build ./..." "T:The build succeeded."
+ok "go build 不在內建清單時會誤報" "build" "$(run e6b.jsonl)"
+printf 'CLAIM_BUILD_RE=go build\n' > "$SANDBOX/hooks/claim-check.conf"
+no "conf 補上 go build 之後不再誤報" "build" "$(run e6b.jsonl)"
+rm -f "$SANDBOX/hooks/claim-check.conf"
+
+printf '\n英文的誤中反例(收太寬的規則會在三天內被關掉，那比沒裝更糟)\n'
+# `committed`/`running`/`build` 在英文技術對話裡到處都是。英文那半一律要求
+# **帶受詞或帶狀態詞**，下面三條就是那個要求的守護者。
+make_transcript e7.jsonl "go" "Edit|/tmp/a.go" "T:We are committed to keeping this warn-only."
+no "committed to（無受詞）不算 commit 過" "版控" "$(run e7.jsonl)"
+
+make_transcript e8.jsonl "go" "Bash|ls" "T:I am running the linter next."
+no "running（無 still/currently）不算背景宣稱" "背景執行" "$(run e8.jsonl)"
+
+make_transcript e9.jsonl "go" "Edit|/tmp/a.go" "T:The build failed with two errors."
+no "build failed 不算 build 過" "build" "$(run e9.jsonl)"
+
+printf '\n英文的質疑訊號與點名的副檔名\n'
+# 兩件事一起驗：CHALLENGE 認不認得英文的質疑，NAMED 點不點得到 .go。
+# 缺任一半這條規則在 Go 專案的英文 session 裡就是零開火。
+# 一句一條:兩個質疑訊號寫在同一句話裡,拿掉其中一個仍然會中,那條就沒有守護者。
+make_transcript e10.jsonl "Are you sure?" "Bash|grep -n x other.go" \
+    "T:Because router.go resolves it by path."
+ok "英文質疑(are you sure)後對沒看過的 .go 下結論" "質疑後未查證" "$(run e10.jsonl)"
+
+make_transcript e10b.jsonl "That's wrong." "Bash|grep -n x other.go" \
+    "T:Because router.go resolves it by path."
+ok "英文質疑(that's wrong)也算" "質疑後未查證" "$(run e10b.jsonl)"
+
+make_transcript e11.jsonl "Why did you pick that name?" "Bash|grep -n x other.go" \
+    "T:Because router.go resolves it by path."
+no "英文的一般提問不算質疑" "質疑後未查證" "$(run e11.jsonl)"
+
 printf '\nconf 覆寫(內建清單漏掉的生態靠它補)\n'
 # 沒有 conf 時認不得;有 conf 時認得,而且**內建的不能因此消失**——
 # 取代式的 conf 會讓人在補一個生態時靜默砍掉其他生態。
@@ -194,6 +252,35 @@ ok "沒有 conf 時認不得 mix test" "MISS" "$(conf_probe 'mix test')"
 printf 'CLAIM_TEST_RE=mix test\n' > "$CONFDIR/claim-check.conf"
 ok "conf 補上之後認得" "HIT" "$(conf_probe 'mix test')"
 ok "內建的不會因為 conf 而消失" "HIT" "$(conf_probe 'fvm flutter test')"
+rm -f "$CONFDIR/claim-check.conf"
+
+# 工具鏈那半外部化了、宣稱詞彙那半沒有,就等於「換一種語言仍然要改 code」。
+# 這兩條驗的是詞表也走得通同一條路。
+claim_probe() { # claim_probe <規則名> <一段話>
+    python3 -c "
+import importlib.util as u, sys
+s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
+pat = next(p for n, p, _o, _w in m.RULES if n == sys.argv[1])
+print('HIT' if pat.search(sys.argv[2]) else 'MISS')
+" "$1" "$2"
+}
+named_probe() { # named_probe <一段話>
+    python3 -c "
+import importlib.util as u, sys
+s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
+print('HIT' if m.NAMED.search(sys.argv[1]) else 'MISS')
+" "$1"
+}
+ok "沒有 conf 時認不得自家的說法" "MISS" "$(claim_probe 測試 'the suite is clean')"
+printf 'CLAIM_TESTS_GREEN_CLAIM_RE=(?i:the suite is clean)\n' > "$CONFDIR/claim-check.conf"
+ok "conf 補上宣稱說法之後認得" "HIT" "$(claim_probe 測試 'the suite is clean')"
+ok "內建的宣稱詞不會因此消失" "HIT" "$(claim_probe 測試 '全套測試綠')"
+rm -f "$CONFDIR/claim-check.conf"
+
+ok "沒有 conf 時點不到 .zig" "MISS" "$(named_probe 'because parser.zig does it')"
+printf 'CLAIM_NAMED_EXT_RE=zig\n' > "$CONFDIR/claim-check.conf"
+ok "conf 補上副檔名之後點得到" "HIT" "$(named_probe 'because parser.zig does it')"
+ok "內建副檔名不會因此消失" "HIT" "$(named_probe 'because parser.dart does it')"
 rm -f "$CONFDIR/claim-check.conf"
 
 printf '\n被質疑後未查證\n'
@@ -236,7 +323,15 @@ ok "註冊的路徑指向真的裝進去的那支" "$H1" "$cmd"
 [ -f "${cmd#python3 }" ] && pass=$((pass+1)) && printf '  ok    註冊的路徑檔案存在\n' \
   || { fail=$((fail+1)); printf '  FAIL  註冊的路徑檔案不存在：%s\n' "$cmd"; }
 
+# 模板沒被佈出去的話,conf 這條路只存在於 SKILL.md 裡等人去找——而它守的正是
+# 「恆不開火」那一半,沒有人會來回報。
+[ -f "$H1/claim-check.conf" ] && pass=$((pass+1)) && printf '  ok    conf 模板有被佈出去\n' \
+  || { fail=$((fail+1)); printf '  FAIL  沒有寫出 claim-check.conf — 詞表這條路沒人找得到\n'; }
+ok "模板帶得出宣稱詞表的鍵" "CLAIM_TESTS_GREEN_CLAIM_RE" "$(cat "$H1/claim-check.conf" 2>/dev/null)"
+
+printf 'CLAIM_TEST_RE=my own\n' > "$H1/claim-check.conf"
 out=$(CLAIM_CHECK_HOME="$H1" sh "$INST" 2>&1)
+ok "重跑不覆蓋 conf" "my own" "$(cat "$H1/claim-check.conf")"
 ok "重跑不覆蓋 checker" "不覆蓋" "$out"
 ok "重跑不重複註冊" "已註冊" "$out"
 

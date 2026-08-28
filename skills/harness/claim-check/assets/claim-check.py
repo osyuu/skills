@@ -88,8 +88,13 @@ def _re(builtin, key):
     漏掉時的失效是靜默的:認不得這個 repo 的指令,規則就不管跑沒跑都判「沒跑過」,
     輸出與事實無關。**補在 conf 裡,不要改這個檔**——改這裡的人下次同步就沒了。
     """
+    return re.compile(_re_src(builtin, key))
+
+
+def _re_src(builtin, key):
+    """同上，但回傳字串——要嵌進更大的 pattern 時用（NAMED 的副檔名那段）。"""
     extra = CONF.get(key, "").strip()
-    return re.compile(builtin + ("|" + extra if extra else ""))
+    return builtin + ("|" + extra if extra else "")
 
 
 RE_TEST = _re(
@@ -177,26 +182,53 @@ def _fresh(ix, kind):
     return ix[kind] >= 0 and ix[kind] >= ix["edit"]
 
 
+# ── 宣稱詞表 ──────────────────────────────────────────────────────────────
+# 失效方向是**恆不開火**:清單裡沒有的說法,輸出與「這個 session 很誠實」一模一樣,
+# 不會有人來回報。內建中英兩種,其餘語言與團隊自己的口頭禪靠 conf 補
+# (`CLAIM_*_CLAIM_RE`,附加不取代,見 conf 模板)。
+#
+# 英文一律要求**帶受詞或帶狀態詞**(`fixed it` 而不是 `fixed`、`still running` 而不是
+# `running`)——那些字在英文技術對話裡到處都是,而對七成回合開火的規則會被關掉。
+# 英文那半沒有英文 session 的誤判基準,收緊或放寬之前先在英文 session 上回放一次。
+
 RULES = [
     # 背景工作會跨回合活著，所以不能只看本回合；但也不能看整個 session——
     # 十個回合前啟動、早就收工的 agent，不能拿來當「現在正在跑」的證據。
     ("背景執行",
-     r"(正在跑|還在跑|已經在跑|跑著|還在背景|背景執行中)",
+     _re(r"(正在跑|還在跑|已經在跑|跑著|還在背景|背景執行中)"
+         r"|(?i:\b(still|currently) running\b)"
+         r"|(?i:running in the background)"
+         r"|(?i:\b(is|are) running (now|right now)\b)",
+         "CLAIM_RUNNING_CLAIM_RE"),
      lambda ix: ix["bg"] >= 0 and ix["bg"] >= ix["_now"] - BG_WINDOW,
      "說了有東西在跑，但最近沒有啟動過背景工作或 agent"),
 
     ("測試",
-     r"(測試綠|全套測試(都)?(綠|過)|測試通過|全綠|沒有失敗)",
+     _re(r"(測試綠|全套測試(都)?(綠|過)|測試通過|全綠|沒有失敗)"
+         r"|(?i:\ball tests? (pass|passed|passing|are green)\b)"
+         r"|(?i:\btests? (are |all )?(green|passing)\b)"
+         r"|(?i:\b(test suite|suite) is green\b)"
+         r"|(?i:\bno test failures\b)",
+         "CLAIM_TESTS_GREEN_CLAIM_RE"),
      lambda ix: _fresh(ix, "test"),
      "說了測試是綠的，但最後一次跑測試之後又改過 code（或根本沒跑過）"),
 
     ("build",
-     r"(build 過|編譯過|編得過|兩個 target|BUILD SUCCEEDED|build 成功)",
+     _re(r"(build 過|編譯過|編得過|兩個 target|BUILD SUCCEEDED|build 成功)"
+         r"|(?i:\bbuild (succeeded|passed|is clean)\b)"
+         r"|(?i:\bbuilds clean(ly)?\b)"
+         r"|(?i:\bcompiles (clean(ly)?|fine|without errors)\b)",
+         "CLAIM_BUILD_OK_CLAIM_RE"),
      lambda ix: _fresh(ix, "build"),
      "說了 build 結果，但最後一次 build 之後又改過 code（或根本沒 build 過）"),
 
     ("版控",
-     r"(已經? ?commit|commit 了|commit 完|已經? ?merge|merge 完|進版控了)",
+     # 英文只認**帶受詞**的:`committed to quality` 這種用法沒有受詞,而它跟
+     # 「我 commit 了」在字面上只差一個字。
+     _re(r"(已經? ?commit|commit 了|commit 完|已經? ?merge|merge 完|進版控了)"
+         r"|(?i:\b(committed|merged) (it|them|this|that|the [a-z]+)\b)"
+         r"|(?i:\bpushed to (main|develop|origin)\b)",
+         "CLAIM_COMMITTED_CLAIM_RE"),
      lambda ix: ix["git"] >= 0,
      "說了 commit/merge 已經做了，但這個 session 沒有跑過 git commit/merge"),
 
@@ -204,24 +236,46 @@ RULES = [
     # **限制先講明**:ix["bg"] 把 SendMessage 也算進去(跟隊友講句話就當成派過人),
     # 而且它看得到「有沒有派」、看不到「review 說了什麼」——抓得到的只有最裸的那種。
     ("正確性宣稱",
-     r"(可以 merge|可以進 (develop|main)|驗證通過|改動正確|沒問題了|沒有問題|LGTM"
-     r"|修好了|沒有 regression|可以合了)",
+     _re(r"(可以 merge|可以進 (develop|main)|驗證通過|改動正確|沒問題了|沒有問題|LGTM"
+         r"|修好了|沒有 regression|可以合了)"
+         r"|(?i:\b(safe|ready|good) to merge\b)"
+         r"|(?i:\bno regressions?\b)"
+         r"|(?i:\b(this|that|it|the (bug|issue|problem))( is| was|'s)? (now )?fixed\b)"
+         r"|(?i:\bfixed (it|that|the (bug|issue|problem))\b)"
+         r"|(?i:\beverything (works|checks out)\b)",
+         "CLAIM_CORRECT_CLAIM_RE"),
      lambda ix: _fresh(ix, "bg"),
      "下了正確性結論，但最後一次改 code 之後沒有派過任何 agent"),
 
     ("注入故障",
-     r"(注入故障|故障注入)",
+     _re(r"(注入故障|故障注入)"
+         r"|(?i:\b(fault|failure) injection\b)"
+         r"|(?i:\binjected a (fault|failure|bug)\b)",
+         "CLAIM_INJECTED_CLAIM_RE"),
      lambda ix: ix["test"] >= 0 and ix["edit"] >= 0,
      "說了注入故障，但沒有『改動 + 跑測試』的組合"),
 ]
 
 # 被質疑的訊號。這種回合最容易生一段理由來守住已經講出口的結論。
-CHALLENGE = re.compile(r"(為何|為什麼|不對|不懂|搞錯|明明|會對不上|真的嗎|你確定|矛盾|亂扯|說謊)")
+# 這條吃的是**使用者**的話,所以它的語言跟著使用者走,不跟著 code 走。
+# 英文避開裸的 `why`——它是最常見的一般提問詞,不是質疑訊號。
+CHALLENGE = _re(r"(為何|為什麼|不對|不懂|搞錯|明明|會對不上|真的嗎|你確定|矛盾|亂扯|說謊)"
+                r"|(?i:\bare you sure\b)|(?i:\byou'?re wrong\b)"
+                r"|(?i:\bthat'?s (not right|wrong)\b)"
+                r"|(?i:\byou (didn'?t|did not|never) (actually )?[a-z]+)"
+                r"|(?i:\bdoesn'?t (add up|match)\b)"
+                r"|(?i:\b(contradicts?|makes no sense)\b)",
+                "CLAIM_CHALLENGE_RE")
 
-# 我點名的東西：反引號裡的 CamelCase 或含底線的識別字，以及 .swift 檔名。
+# 我點名的東西：反引號裡的 CamelCase 或含底線的識別字，以及原始碼檔名。
+# 副檔名清單跟工具鏈清單同一個毛病:只列兩個生態,別的生態裡這條規則點不到名,
+# 於是永遠沒有 unseen、永遠不開火。要補用 CLAIM_NAMED_EXT_RE(只放副檔名,`|` 分隔)。
+# 不收 md/json/yaml:文件與設定檔常被順口提到,收進來會把閒聊算成「下了結論」。
 NAMED = re.compile(
     r"`([A-Z][A-Za-z0-9_]{5,}|[a-z][A-Za-z0-9_]*_[A-Za-z0-9_]+)`"
-    r"|(\b[\w][\w./-]*\.(?:swift|dart)\b)")
+    r"|(\b[\w][\w./-]*\.(?:" +
+    _re_src(r"swift|dart|py|ts|tsx|js|jsx|go|rs|kt|rb|java|cs|php|sh",
+            "CLAIM_NAMED_EXT_RE") + r")\b)")
 
 
 def check(events: list, user_text: str) -> list:
@@ -240,7 +294,7 @@ def check(events: list, user_text: str) -> list:
         ix = _index(calls)
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
-            if re.search(pat, payload) and not ok(ix):
+            if pat.search(payload) and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
                     findings.append(f)
@@ -346,7 +400,7 @@ def check_scoped(events, cut, user_text):
         ix = _index(calls)
         ix["_now"] = len(calls)
         for name, pat, ok, why in RULES:
-            if re.search(pat, payload) and not ok(ix):
+            if pat.search(payload) and not ok(ix):
                 f = f"[{name}] {why}"
                 if f not in findings:
                     findings.append(f)

@@ -15,6 +15,16 @@ else
   echo "  ✓ 寫入 $DEST/hooks/claim-check.py"
 fi
 
+# conf 的兩半失效方向相反,而**宣稱詞表那半是恆不開火**——沒有人會來回報一道
+# 從不出聲的守門。所以模板要落到看得見的位置,不能只寫在 SKILL.md 裡等人去找。
+# 一樣不覆蓋:裡面是使用者自己補的生態與說法。
+if [ -f "$DEST/claim-check.conf" ]; then
+  echo "  ✓ $DEST/claim-check.conf 已存在,不覆蓋(保留你補的詞表)。"
+else
+  cp "$ASSETS/claim-check.conf.template" "$DEST/claim-check.conf"
+  echo "  ✓ 寫入 $DEST/claim-check.conf(全空 = 只用內建清單,先去填)"
+fi
+
 if python3 - "$SETTINGS" "$DEST" <<'PY'
 import json, os, sys
 p, dest = sys.argv[1], sys.argv[2]
@@ -52,6 +62,9 @@ fi
 cat <<'MSG'
 
 後續（需要判斷，刻意不自動做）：
+  0. 填 ~/.claude/claim-check.conf（或 repo 的 hooks/claim-check.conf，repo 那份優先）。
+     工具鏈漏了會**恆開火**；宣稱說法漏了會**恆不開火**，而後者跟「很誠實」長得一樣。
+     內建只有中英兩種語言。填完拿你實際會講的那句話回放一次，確認它認得。
   1. 先跑 warn 幾天，看 ~/.claude/claim-check.log 的誤判長什麼樣再收緊規則。
      回放既有對話量基準：
        python3 ~/.claude/hooks/claim-check.py --replay <transcript.jsonl>

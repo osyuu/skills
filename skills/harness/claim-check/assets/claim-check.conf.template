@@ -16,3 +16,38 @@ CLAIM_BUILD_RE=
 # 會改動原始碼的指令(codegen、formatter、fixer)與副檔名。
 # 例:gofmt -w|cargo fmt|prettier --write|eslint --fix|>>?\s*[\w./~-]+\.(ts|go|rs)
 CLAIM_MUTATE_RE=
+
+# ── 宣稱詞表 ──────────────────────────────────────────────────────────
+# 上面三項補的是**工具鏈**(它認不得你的指令);下面補的是**宣稱本身的說法**。
+# 兩者的失效方向相反:工具鏈漏了會**恆開火**,詞表漏了會**恆不開火**——
+# 而後者跟「這個 session 很誠實」在畫面上完全一樣,不會有人來跟你說。
+#
+# 內建中英各一半。**第三種語言、團隊自己的口頭禪、翻譯腔,一律得補在這裡。**
+# 一樣是**附加**到內建清單,不取代。每項都是 regex,不區分大小寫要自己寫 (?i:...)。
+
+# 「有東西正在背景跑」。例:バックグラウンドで実行中|läuft noch
+CLAIM_RUNNING_CLAIM_RE=
+
+# 「測試是綠的」。例:(?i:suite is clean)|テストは通った
+CLAIM_TESTS_GREEN_CLAIM_RE=
+
+# 「build 過了」。例:(?i:link(ed|s) clean)|ビルド通った
+CLAIM_BUILD_OK_CLAIM_RE=
+
+# 「已經 commit / merge 了」。例:(?i:landed on main)|コミット済み
+CLAIM_COMMITTED_CLAIM_RE=
+
+# 「這份改動是對的」——最貴的一種宣稱。例:(?i:ship it)|(?i:good to go)|問題ない
+CLAIM_CORRECT_CLAIM_RE=
+
+# 「注入過故障」。例:(?i:mutation(-| )tested)|フォールト注入
+CLAIM_INJECTED_CLAIM_RE=
+
+# 使用者在質疑你。這條吃的是**使用者**的話,語言跟著使用者走。
+# 例:(?i:that can'?t be right)|本当に?|嘘でしょ
+CLAIM_CHALLENGE_RE=
+
+# 「被質疑後對沒看過的東西下結論」那條規則靠檔名點名。**只放副檔名**,`|` 分隔,
+# 不含點。內建只有主流那十幾個,你的生態不在裡面的話這條規則永遠點不到名、
+# 永遠不開火。例:ex|exs|zig|scala|clj
+CLAIM_NAMED_EXT_RE=

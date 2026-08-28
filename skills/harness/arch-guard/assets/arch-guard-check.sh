@@ -13,7 +13,8 @@
 #   (default)   warn-only — print violations, exit 0. For pre-commit.
 #   --strict    exit 1 if any violation (for CI / pre-push).
 #   --audit     print violations + a per-rule count summary, exit 0.
-#               Exits 1 only when the config still has <TODO> — see below.
+#               Exits 1 only when the config declares nothing to check —
+#               an unfilled <TODO>, or no LAYERS and no CHOKEPOINTS. See below.
 #
 # Config path override: ARCH_LAYERS_CONF=path sh arch-guard-check.sh
 # Deterministic (git grep); safe to run from a repo root.
@@ -46,6 +47,18 @@ case "$ROOT$PACKAGE$IMPORT_RE$LAYERS$PARTITIONED$IGNORE" in
     [ "$mode" = "warn" ] || exit 1
     exit 0 ;;
 esac
+
+# 填完 <TODO> 之後還有第二種「等於沒跑」:LAYERS 空著、CHOKEPOINTS 也沒有半條有效規則。
+# 那時下面兩個迴圈一次都不會進去,尾端照樣印「共 0 條違規」——與這個 repo 真的乾淨
+# 一模一樣。模板允許不適用的欄位留空,所以這個狀態是打得出來的,而它正是這支守門
+# 存在的理由本身:恆 0 的檢查比不裝更糟。處置與 <TODO> 同一條(只有 warn 能 exit 0)。
+chk_rules=$(printf '%s\n' "${CHOKEPOINTS:-}" |
+            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -cv '^\(#.*\)\?$')
+if [ -z "$(printf '%s' "${LAYERS:-}" | tr -d '[:space:]')" ] && [ "$chk_rules" -eq 0 ]; then
+  echo "arch-guard: $conf 的 LAYERS 與 CHOKEPOINTS 都沒有規則 — 這次檢查等於沒跑" >&2
+  [ "$mode" = "warn" ] || exit 1
+  exit 0
+fi
 
 : "${ROOT:=lib}" "${IGNORE:=__never_matches__}"
 

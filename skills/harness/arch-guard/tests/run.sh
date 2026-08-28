@@ -109,8 +109,12 @@ ok "allow 沒有把其餘一起濾光"   "lib/features/f1/a.dart" "$out"
 conf 'all:::(unclosed:::壞 pattern 要出聲'
 out=$(run); ok "all 模式的壞 pattern 不被吞掉" "unclosed" "$out"
 
+# 這條驗的是**空字串不會把解析弄壞**,所以 LAYERS 要留著——兩邊都空是「沒有規則
+# 可跑」,checker 現在會對那種 conf 出聲(見下面〈沒有規則可跑〉那組)。
+LAYERS_V="core"
 conf ''
 out=$(run); ok "CHOKEPOINTS 空時乾淨退出" "共 0 條違規" "$out"
+LAYERS_V=""
 
 echo "── 分層規則（既有功能，別被改壞）──"
 LAYERS_V="features core"
@@ -178,6 +182,40 @@ _ao=$(cd "$_sb2" && sh hooks/arch-guard-check.sh --audit 2>/dev/null); _arc=$?
   && { pass=$((pass + 1)); echo "  ok    未填 conf 時 --audit 不會靜默回 0"; } \
   || { fail=$((fail + 1)); echo "  FAIL  未填 conf 時 --audit exit 0 且 stdout 全空 — 會被讀成「0 hits」"; }
 rm -rf "$_sb2"
+
+# 填完 <TODO> 之後的第二種「等於沒跑」:模板允許不適用的欄位留空,填成 LAYERS=""
+# 且沒有半條 chokepoint 是打得出來的,而那時兩個迴圈都不會進去、尾端照印「共 0 條違規」。
+_sb3=$(mktemp -d); mkdir -p "$_sb3/hooks"
+cp "$HERE/../assets/arch-guard-check.sh" "$_sb3/hooks/"
+_emptyconf() {  # $1 = CHOKEPOINTS 的內容
+  printf 'ROOT="lib"\nPACKAGE="x"\nIMPORT_RE="i {LAYER}"\nLAYERS=""\nPARTITIONED=""\nIGNORE="__never_matches__"\nCHOKEPOINTS="%s"\n' "$1" > "$_sb3/hooks/arch-layers.conf"
+}
+_emptyconf ""
+_eo=$(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit 2>&1); _erc=$?
+{ [ "$_erc" -ne 0 ] && [ -n "$_eo" ]; } \
+  && { pass=$((pass + 1)); echo "  ok    LAYERS 與 CHOKEPOINTS 皆空時 --audit 出聲且非零"; } \
+  || { fail=$((fail + 1)); printf '  FAIL  沒有規則可跑卻靜默通過\n        rc=%s 實得：%s\n' "$_erc" "$_eo"; }
+(cd "$_sb3" && sh hooks/arch-guard-check.sh >/dev/null 2>&1)
+[ $? -eq 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    沒有規則可跑時 warn 模式仍 exit 0"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  沒有規則可跑時 warn 回非零 — 不帶 || true 的 pre-commit 會被擋死"; }
+# 註解不是規則。CHOKEPOINTS 只剩註解時仍然是「沒有規則可跑」。
+_emptyconf '
+# 之後再補
+'
+(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit >/dev/null 2>&1)
+[ $? -ne 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    CHOKEPOINTS 只剩註解也算沒有規則"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  CHOKEPOINTS 只剩註解時被當成有規則 — 那是一道恆 0 的守門"; }
+# 反向:有一條真的規則就不准開火,否則只設 chokepoint 不分層的 repo 永遠交不出條件。
+_emptyconf '
+all:::DioException:::no dio
+'
+(cd "$_sb3" && sh hooks/arch-guard-check.sh --audit >/dev/null 2>&1)
+[ $? -eq 0 ] \
+  && { pass=$((pass + 1)); echo "  ok    只有 chokepoint、沒有 LAYERS 的 conf 照常跑"; } \
+  || { fail=$((fail + 1)); echo "  FAIL  只設 chokepoint 的 repo 被誤判成沒有規則"; }
+rm -rf "$_sb3"
 
 echo "── Python IMPORT_RE（模板範例）──"
 # 結尾 `\.` 會漏掉 `from pkg.layer import x`（layer 後面不是點）——audit 印 0、

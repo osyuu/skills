@@ -35,4 +35,39 @@ for live in hooks/*.sh .claude/hooks/*; do
         }
     done
 done
+
+# ── 使用者層的部署副本(`~/.claude/hooks/`)────────────────────────────────
+# 跟上面那批的差別有兩點,所以不能混在同一張表裡:
+#   1. **它在 repo 外面**,`git status`、`git diff`、任何 review 都看不到它。改了
+#      `assets/` 忘了同步,跑的是舊版而測試量的是新版——兩邊都綠。實際犯過一次。
+#   2. **不存在不算漂移**:那只表示這台機器沒裝那道守門。對它出聲會讓每次 commit
+#      都噴一行與這次改動無關的東西,而噴幾次之後整支 sync-check 就沒人看了。
+UPAIRS='hooks/claim-check.py|skills/harness/claim-check/assets/claim-check.py'
+UROOT="${SYNC_CHECK_HOME:-$HOME}/.claude"
+
+printf '%s\n' "$UPAIRS" | while IFS='|' read -r live src; do
+    [ -n "$live" ] || continue
+    [ -f "$UROOT/$live" ] || continue
+    [ -f "$src" ] || {
+        printf '\033[33m⚠  sync-check：%s 裝著,但來源 %s 不見了\033[0m\n' "$UROOT/$live" "$src"
+        continue
+    }
+    cmp -s "$UROOT/$live" "$src" || {
+        printf '\033[33m⚠  sync-check：%s 與來源 %s 不一致\033[0m\n' "$UROOT/$live" "$src"
+        printf '   這份在 repo 外面,git 看不到它——跑的是它,測試量的是來源。\n'
+        printf '   cp %s %s\n' "$src" "$UROOT/$live"
+    }
+done
+
+# 同上的反查:使用者層裝著某支腳本、某個 skill 的 assets/ 有同名來源,卻不在 UPAIRS 裡。
+for live in "$UROOT"/hooks/*; do
+    [ -f "$live" ] || continue
+    for src in skills/*/*/assets/"${live##*/}"; do
+        [ -f "$src" ] || continue
+        printf '%s\n' "$UPAIRS" | grep -qF "hooks/${live##*/}|" || {
+            printf '\033[33m⚠  sync-check：%s 在 %s 有同名來源，但不在 UPAIRS 裡\033[0m\n' "$live" "$src"
+            printf '   這支的漂移目前沒有任何人看著。\n'
+        }
+    done
+done
 exit 0
