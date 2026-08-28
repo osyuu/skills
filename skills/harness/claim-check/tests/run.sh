@@ -68,6 +68,134 @@ no "改完才跑測試就不該報" "測試" "$(run t4.jsonl)"
 make_transcript t5.jsonl "做吧" "Bash|xcodebuild test-without-building" "T:全套測試綠。" "Edit|/tmp/b.swift"
 no "宣稱寫在改動之前不該報" "測試" "$(run t5.jsonl)"
 
+printf '\nFlutter/Dart 工具鏈（規則綁死單一技術棧時，開火會變得毫無意義）\n'
+# 有鑑別力的是 f2/f4/f6/f7（原版會 FAIL）；f1/f3/f5 在原版也通過，
+# 因為原版對 Flutter 專案恆開火——正例區分不了「正確開火」與「總是開火」。
+# 修正前的破口：RE_TEST 認不得 flutter/dart，ix["test"] 恆為 -1
+# → 跑了也判「沒跑過」，於是這條規則在 Flutter 專案的輸出與事實無關。
+make_transcript f1.jsonl "做吧" "Bash|fvm flutter test" "Edit|/tmp/a.dart" "T:全套測試綠。"
+ok "flutter 測試後又改 code 還說綠" "測試" "$(run f1.jsonl)"
+
+make_transcript f2.jsonl "做吧" "Edit|/tmp/a.dart" "Bash|fvm flutter test" "T:全套測試綠。"
+no "flutter 改完才跑測試就不該報" "測試" "$(run f2.jsonl)"
+
+make_transcript f3.jsonl "做吧" "Bash|fvm dart test" "Edit|/tmp/a.dart" "T:全套測試綠。"
+ok "dart test 也要認得" "測試" "$(run f3.jsonl)"
+
+make_transcript f4.jsonl "做吧" "Edit|/tmp/a.dart" "Bash|fvm flutter build appbundle" "T:build 成功。"
+no "flutter build 之後說 build 成功不該報" "build" "$(run f4.jsonl)"
+
+# 有些 session 全程用 Bash 寫檔（heredoc / python3 write_text），只認 Edit/Write
+# 等於「跑完之後有沒有再動過 code」整條失效。
+make_transcript f5.jsonl "做吧" "Bash|fvm flutter test" "Bash|cat > lib/core/x.dart" "T:全套測試綠。"
+ok "用 Bash 寫 .dart 也算改過 code" "測試" "$(run f5.jsonl)"
+
+# 用原版也認得的測試指令，把差異縮到只剩「.dart 算不算改過 code」這一點——
+# 否則正例會因為「原版永遠開火」而假通過，量不到這處改動。
+make_transcript f7.jsonl "做吧" "Bash|swift test" "Bash|echo x > lib/core/x.dart" "T:全套測試綠。"
+ok "只差 .dart 副檔名時也要判成改過" "測試" "$(run f7.jsonl)"
+
+make_transcript f6.jsonl "為何要這樣？不對吧" "Bash|grep -n x other_file.dart" \
+    "T:因為 typing_indicator_controller.dart 是靠計時器的。"
+ok "對沒打開過的 .dart 下結論" "質疑後未查證" "$(run f6.jsonl)"
+
+printf '\n誤中反例（整套原本一條都沒有——兩個 P0 就是這樣漏掉的）\n'
+# `.dart` 是這個生態最常見的副檔名，少了詞界，`git add a.dart test/b.dart`
+# 會被當成跑過測試。而 git add 正好發生在準備 commit 那一刻。
+make_transcript f8.jsonl "做吧" "Bash|fvm flutter test" "Edit|/tmp/a.dart" \
+    "Bash|git add lib/a.dart test/a_test.dart" "T:全套測試綠。"
+ok "git add 列 .dart + test/ 不算跑過測試" "測試" "$(run f8.jsonl)"
+
+make_transcript f9.jsonl "做吧" "Bash|fvm dart analyze lib/a.dart test/a_test.dart" "T:全套測試綠。"
+ok "dart analyze 帶 test/ 路徑不算跑過測試" "測試" "$(run f9.jsonl)"
+
+# [\w/] 不含 . 與 -，`chat_state.g.dart` 只會抓到 `g.dart`，而下游是子字串比对，
+# 于是被同回合任何一个 *.g.dart 涵盖掉 → 静默。这个 repo 满地都是产生档。
+# RE_BUILD 的詞界同理：`a.dart compile.sh` 這種列檔名的寫法會撞上 `dart compile`。
+make_transcript f14.jsonl "做吧" "Edit|/tmp/a.dart" \
+    "Bash|git add lib/a.dart compile.sh" "T:build 成功。"
+ok "git add 帶 compile 檔名不算 build 過" "build" "$(run f14.jsonl)"
+
+make_transcript f10.jsonl "為何要這樣？不對吧" "Read|/proj/lib/user_info.g.dart" \
+    "T:因為 chat_state.g.dart 的 fromJson 是 checked 模式，所以會 throw。"
+ok "多重副檔名不該被無關的同尾檔涵蓋" "質疑後未查證" "$(run f10.jsonl)"
+
+# codegen/format 那條同樣需要詞界與完整指令形式——這是修 P0-1 的同一輪自己加的，
+# 沒經任何人審，重審時就抓到同型缺陷。
+make_transcript f11.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|git add lib/a.dart format_helper.dart" "T:全套測試綠。"
+no "git add 帶 format 檔名不算改過 code" "測試" "$(run f11.jsonl)"
+
+make_transcript f12.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|fvm dart analyze lib/x.dart fixtures/y.dart" "T:全套測試綠。"
+no "dart analyze 帶 fixtures 路徑不算改過 code" "測試" "$(run f12.jsonl)"
+
+make_transcript f13.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|fvm dart run build_runner build --delete-conflicting-outputs" "T:全套測試綠。"
+ok "codegen 重生產生檔之後說測試綠要開火" "測試" "$(run f13.jsonl)"
+
+printf '\n正確性宣稱(今天四次真陽性的形狀)\n'
+make_transcript g1.jsonl "做吧" "Edit|/tmp/a.dart" "T:改完了,本機驗證能過,可以 merge。"
+ok "宣稱可以 merge 但一個 agent 都沒派" "正確性宣稱" "$(run g1.jsonl)"
+
+make_transcript g2.jsonl "做吧" "Edit|/tmp/a.dart" "Agent|spawn review" "T:review 回來了,改動正確。"
+no "派過 agent 之後就不該報" "正確性宣稱" "$(run g2.jsonl)"
+
+# 派完 agent 又改了 code,等於那次 review 審的是別的東西
+make_transcript g3.jsonl "做吧" "Agent|spawn review" "Edit|/tmp/a.dart" "T:修好了。"
+ok "派過但之後又改過 code" "正確性宣稱" "$(run g3.jsonl)"
+
+# 事實陳述不該中——這條規則要抓的是判決,不是數字
+make_transcript g4.jsonl "做吧" "Edit|/tmp/a.dart" "T:全套測試 479 passed / 9 failed,9 個是既有基線。"
+no "純數字回報不算正確性宣稱" "正確性宣稱" "$(run g4.jsonl)"
+
+# 「完整指令形式」的守護者:只寫 build_runner / slang 的話,grep 它們也會算數。
+make_transcript f15.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|grep -rn build_runner .claude/" "T:全套測試綠。"
+no "grep build_runner 不算改過 code" "測試" "$(run f15.jsonl)"
+
+make_transcript f16.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|grep -rn slang lib/i18n/" "T:全套測試綠。"
+no "grep slang 不算改過 code" "測試" "$(run f16.jsonl)"
+
+# 唯讀形式:CI 的格式檢查與預覽都不改檔,而它們正好出現在宣稱前的最後一步。
+make_transcript f17.jsonl "做吧" "Bash|fvm flutter test" \
+    "Bash|fvm dart format --output=none --set-exit-if-changed lib/" "T:全套測試綠。"
+no "dart format --output=none 不算改過 code" "測試" "$(run f17.jsonl)"
+
+# RE_BUILD 的詞界(靜默方向):這兩個檔在 repo 裡都真的存在,git add 同時列它們很自然。
+make_transcript f18.jsonl "做吧" "Edit|/tmp/a.swift" \
+    "Bash|git add ios/Runner/AppDelegate.swift build.yaml" "T:build 成功。"
+ok "git add 列 .swift + build.yaml 不算 build 過" "build" "$(run f18.jsonl)"
+
+# f18 同時被前後兩道擋住,所以它測不到其中任何一道——拿掉任一道它照樣過。
+# 下面兩條各自只被一道擋,才是那兩道的守護者。
+make_transcript f19.jsonl "做吧" "Edit|/tmp/a.swift" \
+    "Bash|git add lib/a.swift build" "T:build 成功。"
+ok "只有前置詞界擋得住的形狀" "build" "$(run f19.jsonl)"
+
+make_transcript f20.jsonl "做吧" "Edit|/tmp/a.swift" \
+    "Bash|cat xcodebuild.log | tail -5" "T:build 成功。"
+ok "只有尾端否定擋得住的形狀" "build" "$(run f20.jsonl)"
+
+printf '\nconf 覆寫(內建清單漏掉的生態靠它補)\n'
+# 沒有 conf 時認不得;有 conf 時認得,而且**內建的不能因此消失**——
+# 取代式的 conf 會讓人在補一個生態時靜默砍掉其他生態。
+CONFDIR="$SANDBOX/hooks"; mkdir -p "$CONFDIR"
+conf_probe() { # conf_probe <指令> ;  在 SANDBOX 當 cwd 跑,讓相對路徑 hooks/ 生效
+    python3 -c "
+import importlib.util as u, sys
+s = u.spec_from_file_location('cc', '$CHECK'); m = u.module_from_spec(s); s.loader.exec_module(m)
+print('HIT' if m.RE_TEST.search(sys.argv[1]) else 'MISS')
+" "$1"
+}
+rm -f "$CONFDIR/claim-check.conf"
+ok "沒有 conf 時認不得 mix test" "MISS" "$(conf_probe 'mix test')"
+printf 'CLAIM_TEST_RE=mix test\n' > "$CONFDIR/claim-check.conf"
+ok "conf 補上之後認得" "HIT" "$(conf_probe 'mix test')"
+ok "內建的不會因為 conf 而消失" "HIT" "$(conf_probe 'fvm flutter test')"
+rm -f "$CONFDIR/claim-check.conf"
+
 printf '\n被質疑後未查證\n'
 make_transcript t6.jsonl "為何要這樣？不對吧" "Bash|grep -n x DualTrackView.swift" \
     "T:因為 \`ReferenceBookmarkStore\` 是靠路徑解析的。"

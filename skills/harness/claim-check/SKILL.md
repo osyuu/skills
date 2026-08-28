@@ -7,6 +7,7 @@ description: >-
   / 要有機制驗證 agent 的宣稱 / 裝 claim check / 驗證 agent 有沒有唬爛」，或在檢討「為什麼要我
   花時間幫 agent 找問題」時，主動使用。這是**敘述面**的守門——code 面的 lint/測試/型別請用
   各自的工具，spec 與 code 對不對得上請用 sdd-harness-init。
+  也認 you never ran that / how do I know you did it / 本当に実行した?。
 ---
 
 # claim-check — 讓「我說我做了」與「我實際做了」對得起來

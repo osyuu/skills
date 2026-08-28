@@ -1,0 +1,18 @@
+# claim-check 的 per-repo 覆寫。放在 <repo>/hooks/claim-check.conf,
+# 或 ~/.claude/claim-check.conf(所有 repo 共用的預設)。repo 那份優先。
+#
+# 值是**附加**到內建清單,不取代——所以只寫你這個 repo 多出來的那些。
+# 內建清單只涵蓋少數幾個生態,而漏掉時的失效是靜默的:認不得你的測試指令,
+# 「測試綠」那條規則就不管你跑沒跑都判「沒跑過」,輸出與事實無關。
+#
+# 每一項都是 regex(會被接在內建 pattern 後面,用 | 連接)。
+
+# 跑測試的指令。例:mix test|zig build test|bundle exec rspec|./gradlew test
+CLAIM_TEST_RE=
+
+# build 的指令。例:dotnet build|mvn package|cargo build|npm run build|make
+CLAIM_BUILD_RE=
+
+# 會改動原始碼的指令(codegen、formatter、fixer)與副檔名。
+# 例:gofmt -w|cargo fmt|prettier --write|eslint --fix|>>?\s*[\w./~-]+\.(ts|go|rs)
+CLAIM_MUTATE_RE=

@@ -18,6 +18,7 @@
 import json
 import os
 import re
+from pathlib import Path
 import sys
 import datetime
 
@@ -57,18 +58,89 @@ def _touched(calls):
 # 這條順帶蓋住一個踩過的坑：還原注入的故障後沒重建就跑 test-without-building，
 # 拿到的是舊 binary 的結果（記在 feedback_hollow_tests）。
 
-RE_TEST = re.compile(
+def _conf():
+    """讀覆寫檔:先 repo 的 `hooks/claim-check.conf`,再使用者層的 `~/.claude/claim-check.conf`。
+
+    格式 `KEY=value`,一行一個,`#` 起頭是註解。
+    """
+    out = {}
+    for path in (Path("hooks/claim-check.conf"),
+                 Path.home() / ".claude" / "claim-check.conf"):
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out.setdefault(k.strip(), v.strip().strip("'\""))
+        except OSError:
+            continue
+    return out
+
+
+CONF = _conf()
+
+
+def _re(builtin, key):
+    """內建清單 **附加** conf 裡那些,不是取代。
+
+    取代的話,補一個生態就會靜默砍掉其他生態。而內建這幾張表只涵蓋少數幾個生態,
+    漏掉時的失效是靜默的:認不得這個 repo 的指令,規則就不管跑沒跑都判「沒跑過」,
+    輸出與事實無關。**補在 conf 裡,不要改這個檔**——改這裡的人下次同步就沒了。
+    """
+    extra = CONF.get(key, "").strip()
+    return re.compile(builtin + ("|" + extra if extra else ""))
+
+
+RE_TEST = _re(
     r"test-without-building|tests/run\.sh|xcodebuild.*\btest\b|pytest|npm test"
-    r"|swift test|cargo test|go test|dotnet test")
-RE_BUILD = re.compile(r"xcodebuild|swift build")
+    r"|swift test|cargo test|go test|dotnet test"
+    # Flutter/Dart：**漏了這行等於這條規則在 Flutter 專案永遠開火**——跑了也認不得，
+    # 判定恒為「沒跑過」，輸出與事實無關。
+    #
+    # **前面的 lookbehind 不能拿掉**：`.dart` 是這個生態最常見的副檔名，少了它，
+    # `git add a.dart test/b.dart` 會被當成跑過測試——而那正好發生在準備 commit 的
+    # 那一刻，「測試綠」這句話最貴的時候，且失敗是**靜默**的（該開火的不開火）。
+    r"|(?<![\w.])(?:flutter|dart|very_good)\s+test\b",
+    "CLAIM_TEST_RE")
+RE_BUILD = _re(
+    # 尾端用 (?![\w.]) 而非 \b：`cat xcodebuild.log` 的 \b 照樣成立（後面是 `.`），
+    # 只有明確排除 `.` 才擋得掉讀 log 檔那類。
+    r"(?<![\w.])(?:xcodebuild|swift\s+build|flutter\s+build|dart\s+compile)(?![\w.])"
+    # 同一個生態常有兩條並行的 build 路徑(桌面/行動、debug/release),只認一條就只覆蓋一半。
+    # **這張表仍是一份會過期的清單**:JVM 的 `mvn package`、Node 的 `npm run build`、
+    # Rust/Go 的 `cargo build`/`go build`、`make`、`dotnet build` 目前都不在,在那些 repo 上
+    # 「build 過」會恆誤報。要治本得把工具鏈移進 per-repo conf,不是把表加長。
+    r"|gradlew\s+\S*(?:assemble|bundle)",
+    "CLAIM_BUILD_RE")
 RE_GIT = re.compile(r"git (commit|merge)")
 # 改動不是只有 Edit/Write。有些 session 明確要求優先用 Bash 改檔（sed -i、heredoc、
 # python3 寫檔），那時只認工具名等於整條「跑完之後有沒有再動過 code」失效——實測一個
 # 全程用 Bash 的 session，7 次「注入故障」開火全是這樣來的誤判。
 # 要求副檔名，所以 `> /dev/null` 這類不會誤中。
-RE_BASH_MUTATE = re.compile(
-    r"sed -i|>>?\s*[\w./~-]+\.(swift|py|sh|md|json|ya?ml|conf|txt|plist|toml)"
-    r"|write_text|cat\s*>|tee\s")
+RE_BASH_MUTATE = _re(
+    r"sed -i|>>?\s*[\w./~-]+\.(swift|dart|py|sh|md|json|ya?ml|conf|txt|plist|toml)"
+    r"|write_text|cat\s*>|tee\s"
+    # 這幾個會改 code 卻不長得像寫檔：codegen 重生 *.g.dart/*.freezed.dart，
+    # format/fix 直接重排原檔。漏了它們，「跑測試 → codegen → 說測試綠」不會開火。
+    #
+    # **詞界與完整指令形式都不能省**：少了 lookbehind，`git add a.dart format_x.dart`
+    # 與 `dart analyze x.dart fixtures/` 會被當成改過 code；只寫 `build_runner`/`slang`
+    # 則 `grep build_runner` 也算數。方向是誤報，但誤報一樣會讓人關掉整個 hook。
+    # 唯讀形式要排除：`--output=none --set-exit-if-changed` 是 CI 的格式檢查、
+    # `--dry-run` 是預覽,兩者都不改檔。誤判成改過 code 會讓緊接著的「測試綠」誤報,
+    # 而那正是它們最常出現的位置——宣稱前的最後一道驗證。
+    r"|(?<![\w.])dart\s+(?:format|fix)\b"
+    r"(?![^\n]*(?:--output=none|--set-exit-if-changed|--dry-run))"
+    r"|build_runner\s+(?:build|watch)|(?:dart|flutter)\s+(?:pub\s+)?run\s+slang",
+    "CLAIM_MUTATE_RE")
+# **兩個已知擋不住的**（別以為 regex 修得掉）：
+#   1. 字面量出現在參數或 heredoc 內文一樣算數——`grep -rn "flutter test"`、
+#      `git commit -m "ci: run flutter test"`、寫進檔案的文件字串，都會被當成跑過。
+#      要真修得先把引號字串與 heredoc body 從 command 剝掉再比對。
+#   2. 經 MCP 工具或 sub-agent 跑的測試看不到（tool_use 沒有 command 欄位），
+#      方向是誤報「沒跑過」。
+#
 # 背景宣稱的時效：多少個事件內啟動過才算數。實測「audit 還在跑」那次，最近一次
 # 背景啟動在 51 個事件前（10 個回合，早已收工）；正常的「還在跑」都緊接在 spawn 後幾個事件內。
 BG_WINDOW = 25
@@ -128,6 +200,15 @@ RULES = [
      lambda ix: ix["git"] >= 0,
      "說了 commit/merge 已經做了，但這個 session 沒有跑過 git commit/merge"),
 
+    # 今天四次真陽性都是同一個形狀:下了正確性結論,而最後一次動 code 之後一個 agent 都沒派。
+    # **限制先講明**:ix["bg"] 把 SendMessage 也算進去(跟隊友講句話就當成派過人),
+    # 而且它看得到「有沒有派」、看不到「review 說了什麼」——抓得到的只有最裸的那種。
+    ("正確性宣稱",
+     r"(可以 merge|可以進 (develop|main)|驗證通過|改動正確|沒問題了|沒有問題|LGTM"
+     r"|修好了|沒有 regression|可以合了)",
+     lambda ix: _fresh(ix, "bg"),
+     "下了正確性結論，但最後一次改 code 之後沒有派過任何 agent"),
+
     ("注入故障",
      r"(注入故障|故障注入)",
      lambda ix: ix["test"] >= 0 and ix["edit"] >= 0,
@@ -138,7 +219,9 @@ RULES = [
 CHALLENGE = re.compile(r"(為何|為什麼|不對|不懂|搞錯|明明|會對不上|真的嗎|你確定|矛盾|亂扯|說謊)")
 
 # 我點名的東西：反引號裡的 CamelCase 或含底線的識別字，以及 .swift 檔名。
-NAMED = re.compile(r"`([A-Z][A-Za-z0-9_]{5,}|[a-z][A-Za-z0-9_]*_[A-Za-z0-9_]+)`|(\b[A-Z][A-Za-z0-9]+\.swift\b)")
+NAMED = re.compile(
+    r"`([A-Z][A-Za-z0-9_]{5,}|[a-z][A-Za-z0-9_]*_[A-Za-z0-9_]+)`"
+    r"|(\b[\w][\w./-]*\.(?:swift|dart)\b)")
 
 
 def check(events: list, user_text: str) -> list:
