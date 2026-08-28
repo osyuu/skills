@@ -40,6 +40,9 @@ no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該
 #      conf 檔在兩次 replay 之間的增減要被看到,〈conf 覆寫〉整段靠這個。
 #   2. checker 崩掉時 traceback 要落進跟開子進程時同一條流(replay 合併 stderr、
 #      probe 只收 stdout),否則壞掉的 checker 會被吃成「空輸出而測試照綠」。
+#      **例外是編譯期診斷**:`compile()` 在任何 redirect 之外、且只跑一次,
+#      SyntaxWarning 這類會落到 run.sh 自己的 stderr、不進任何 $OUT/<id>。
+#      要寫「壞 conf 的警告要在 replay 輸出裡看得到」這種斷言的話,先處理這一點。
 python3 - "$CHECK" "$SANDBOX/.out" <<'PYEOF'
 import io, json, os, sys, traceback
 from contextlib import redirect_stdout, redirect_stderr
@@ -383,7 +386,11 @@ PYEOF
     exit 1
 }
 
-r() { cat "$SANDBOX/.out/$1" 2>/dev/null; }
+# **缺檔要留下痕跡。** `.done` 只證明 driver 跑到了最後一行,證明不了每個 id 都產出。
+# 缺一個 `.out` 的話 `cat` 回空字串,而空字串不含任何 needle → 那條 `no` 型斷言必過
+# ——實測有 31 個 id 只被 `no` 型消費,漏寫它們的話輸出跟乾淨跑逐 byte 相同。
+# 指紋與 no-op 哨兵都掃不到這個盲區(兩邊都不 FAIL,FAIL 集合不變)。
+r() { [ -f "$SANDBOX/.out/$1" ] || : > "$SANDBOX/.missing.$1"; cat "$SANDBOX/.out/$1" 2>/dev/null; }
 
 printf '\n背景宣稱\n'
 ok "說在跑但沒啟動背景工作" "背景執行" "$(r t1)"
@@ -650,6 +657,12 @@ no "壞 JSON 不該還印後續步驟" "先跑 warn" "$out"
 ok "壞 JSON 時原檔不動" "// 註解" "$(cat "$H4/settings.json")"
 rm -rf "$H3" "$H4"
 
+
+for _m in "$SANDBOX"/.missing.*; do
+    [ -e "$_m" ] || break
+    fail=$((fail + 1))
+    printf '  FAIL  driver 沒有產出 %s —— 消費它的斷言全程在比對空字串\n' "${_m##*/.missing.}"
+done
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

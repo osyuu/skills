@@ -94,6 +94,13 @@ i=0
 while [ "$i" -lt "$seq_n" ]; do
   i=$((i + 1))
   # **IFS 要真的 tab**:`IFS='\t'` 在 POSIX sh 是反斜線與 t 兩個字元,讀出來全空。
+  # **缺檔要自己吵。** 重導失敗時 `read` 根本不執行,而 verdict/name/why 會**沿用
+  # 上一圈的值**——上一圈是 ok 就算成 pass。job 猝死、或結尾少一個 `wait`,輸出會是
+  # 「N 條注入轉紅,0 條沒有」exit 0,跟正常跑幾乎逐字相同。
+  if [ ! -f "$SB/r$i" ]; then
+    fail=$((fail + 1)); printf '  FAIL  第 %s 條的結果檔不見了(job 沒跑完?)\n' "$i"; continue
+  fi
+  verdict=; name=; why=
   IFS="$(printf '\t')" read -r verdict name why < "$SB/r$i"
   if [ "$verdict" = ok ]; then
     pass=$((pass + 1)); printf '  ok    %s\n' "$name"
