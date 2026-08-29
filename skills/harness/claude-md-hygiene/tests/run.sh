@@ -25,14 +25,29 @@ fail=0
 
 ok() { case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
   *) fail=$((fail+1)); printf '  FAIL  %s\n        期望含：%s\n        實得：%s\n' "$1" "$2" "$3" ;; esac; }
-no() { case "$3" in *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
+# **crash 不得算通過。** `no` 斷言的是「輸出不含某字串」，而 traceback 也不含它——
+# hook 一炸，所有 no 斷言就 vacuously pass，而那正是本 repo 出過的假測試的成因結構。
+no() { case "$3" in *Traceback*)
+    fail=$((fail+1)); printf '  FAIL  %s\n        hook 炸了（traceback）：%s\n' "$1" "$3" ;;
+  *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
   *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
+# 數字用 `case` 的子字串比對時 10 會被當成含 0、11 含 1。目前值域只有 0/1，但釘死比較便宜。
+eq() { if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %s\n' "$1"
+  else fail=$((fail+1)); printf '  FAIL  %s\n        期望：%s\n        實得：%s\n' "$1" "$2" "$3"; fi; }
 
 fire() {  # fire <session> <path>
   printf '{"session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1" "$2" \
     | python3 "$HOOK" 2>&1
 }
 fresh() { rm -rf "$TMPDIR/claude-md-hygiene"; }
+
+bash_name() {  # bash_name <session> <command> — 印出 hook 報的檔名（沒開火則印 QUIET）
+  bash_fire "$1" "$2" | python3 -c 'import json,sys
+raw=sys.stdin.read()
+try: d=json.loads(raw)
+except Exception: print("QUIET" if "additionalContext" not in raw else "PARSE-FAIL"); raise SystemExit
+print(d["hookSpecificOutput"]["additionalContext"].split("常駐規範檔 ",1)[1].split("。",1)[0])'
+}
 
 bash_fire() {  # bash_fire <session> <command>
   python3 -c 'import json,sys; print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]}}))' "$1" "$2" \
@@ -121,6 +136,48 @@ c6="python3 -c \"pathlib.Path(${Q}notes.conf${Q}).write_text(s)\"
 git commit -m \"docs: 說明 CLAUDE.md 的指標\""
 fresh; no "訊息提到＋改別的檔" 'additionalContext' "$(bash_fire c6 "$c6")"
 
+echo "── 誤報不得燒掉 Write/Edit 的 stamp（stamp key 必須分開）──"
+# **路徑要用 python 的 cwd，不能用 $PWD。** macOS 的 mktemp 給的是 /var/...，
+# 而 /var 是 /private/var 的 symlink；`os.path.abspath` 不解 symlink，於是
+# shell 的 $PWD 與 hook 內算出來的絕對路徑天生就不同 key——兩邊本來就撞不到，
+# 這條斷言會為了錯的理由通過。實測：用 $PWD 時把 stamp 前綴拿掉，測試照樣全綠。
+PYCWD=$(python3 -c 'import os; print(os.getcwd())')
+fresh
+ok "Bash 寫 CLAUDE.md 開火"   'additionalContext' "$(bash_fire p1 'cat > CLAUDE.md <<EOF')"
+ok "接著 Edit 同一檔仍開火"    'additionalContext' "$(fire p1 "$PYCWD/CLAUDE.md")"
+fresh
+ok "同一 Bash 指令只開一次"    'QUIET'             "$( bash_fire p2 'cat > CLAUDE.md <<EOF' >/dev/null; bash_name p2 'cat > CLAUDE.md <<EOF')"
+
+echo "── 報的必須是被寫的那個檔，不是指令裡先出現的 ──"
+fresh; eq "sed 樣式在前、目標在後" "AGENTS.md"        "$(bash_name n1 "sed -i '' 's/CLAUDE.md/X/' AGENTS.md")"
+fresh; eq "sed 直接改"            "CLAUDE.md"        "$(bash_name n2 "sed -i '' s/a/b/ CLAUDE.md")"
+fresh; eq "tee 目標"              ".claude.local.md" "$(bash_name n3 'tee .claude.local.md <<EOF')"
+fresh; eq "重導向含路徑"          "AGENTS.md"        "$(bash_name n4 'cat > docs/AGENTS.md <<EOF')"
+fresh; eq "cp 目的地"             "CLAUDE.local.md"  "$(bash_name n5 'cp /tmp/n.md CLAUDE.local.md')"
+
+echo "── 讀取／備份／同名前後綴不得開火 ──"
+fresh; no "cp 來源是常駐檔"   'additionalContext' "$(bash_fire q1 'cp CLAUDE.md /tmp/bak/')"
+fresh; no "備份成 .bak"       'additionalContext' "$(bash_fire q2 'cp CLAUDE.md CLAUDE.md.bak')"
+fresh; no "寫 .bak"           'additionalContext' "$(bash_fire q3 'cat x > CLAUDE.md.bak')"
+fresh; no "同前綴的別的檔"    'additionalContext' "$(bash_fire q4 'cat > MY_CLAUDE.md <<EOF')"
+fresh; no "python 讀"         'additionalContext' "$(bash_fire q5 'pathlib.Path("CLAUDE.md").read_text()')"
+fresh; no "open 讀"           'additionalContext' "$(bash_fire q6 'open("CLAUDE.md").read()')"
+
+echo "── 換行是分隔符，且 install 不是寫檔動詞 ──"
+fresh; no "cp 後換行提到"     'additionalContext' "$(bash_fire r1 'cp a.md b.md
+git add CLAUDE.md')"
+fresh; no "mv 後換行提到"     'additionalContext' "$(bash_fire r2 'mv old.md new.md
+grep -n hook CLAUDE.md')"
+fresh; no "pip install"       'additionalContext' "$(bash_fire r3 'pip install -r req.txt
+cat CLAUDE.md')"
+fresh; no "tee 後換行提到"    'additionalContext' "$(bash_fire r4 'tee /tmp/x.md
+grep CLAUDE.md')"
+
+echo "── python 寫檔的其他慣用寫法 ──"
+fresh; ok "f-string"          'additionalContext' "$(bash_fire s1 'open(f"{d}/CLAUDE.md","w").write(s)')"
+fresh; ok "Path(d) / NAME"    'additionalContext' "$(bash_fire s2 '(Path(d) / "CLAUDE.md").write_text(s)')"
+fresh; ok ".claude.local.md"  'additionalContext' "$(bash_fire s3 'cat > .claude.local.md <<EOF')"
+
 echo "── 安裝器 ──"
 D=$(newrepo); cd "$D"
 sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
@@ -151,6 +208,57 @@ s=$(cat .claude/settings.json)
 ok "既有 hook 還在" "prettier --write" "$s"
 ok "既有其他設定還在" '"KEEP"' "$s"
 ok "自己也註冊了" "claude-md-hygiene-hook.py" "$s"
+
+echo "── 安裝器：update 路徑不得動到別人 ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"prettier --write"}]},{"matcher":"Write|Edit","hooks":[{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]}]},"env":{"KEEP":"1"}}
+JSON
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+s=$(cat .claude/settings.json)
+ok "別人的 hook 還在"     "prettier --write" "$s"
+ok "別人的設定還在"       '"KEEP"'           "$s"
+eq "entry 數不變"         "2" "$(python3 -c "import json;print(len(json.load(open('.claude/settings.json'))['hooks']['PostToolUse']))")"
+eq "別人的 matcher 沒被動" "Write" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")"
+eq "自己的 matcher 有更新" "Write|Edit|Bash" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][1]['matcher'])")"
+
+echo "── 安裝器：同一筆 entry 與別人共用時不得改 matcher ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"prettier --write"},{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]}]}}
+JSON
+out=$(sh "$SKILL/scripts/install.sh" 2>&1)
+eq "matcher 維持原狀"     "Write|Edit" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")"
+ok "有講為什麼沒動"       "共用同一筆 entry" "$out"
+
+echo "── 安裝器：比 MATCHER 更寬的設定不得被收窄 ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]}]}}
+JSON
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+eq "\"*\" 保留" "*" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")"
+
+echo "── 安裝器：身分判定不得用子字串 ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"echo \"python3 .claude/hooks/claude-md-hygiene-hook.py\""}]}]}}
+JSON
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+eq "包裝過的那筆沒被動"   "Write" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")"
+eq "真的 hook 有註冊"     "True" "$(python3 -c "
+import json;es=json.load(open('.claude/settings.json'))['hooks']['PostToolUse']
+print(any(h.get('command')=='python3 .claude/hooks/claude-md-hygiene-hook.py' for e in es for h in e.get('hooks',[])))")"
+
+echo "── 安裝器：多筆自己的 entry 不得全改成同值 ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]},{"matcher":"Bash","hooks":[{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]}]}}
+JSON
+out=$(sh "$SKILL/scripts/install.sh" 2>&1)
+eq "第一筆沒被動" "Write|Edit" "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")"
+eq "第二筆沒被動" "Bash"       "$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][1]['matcher'])")"
+ok "有交還給人決定" "未自動更動 matcher" "$out"
 
 echo "── 壞掉的 settings.json 不得被覆寫 ──"
 D=$(newrepo); cd "$D"; mkdir -p .claude

@@ -91,6 +91,27 @@ mut "stamp I/O 不包 try"     "$H" "s.replace('        try:\n            if sta
 mut "拿掉 tool_input 型別檢查"   "$H" "s.replace('if not isinstance(tool_input, dict):', 'if False:')"
 mut "改成比對完整路徑"          "$H" "s.replace('name = os.path.basename(path)', 'name = path')"
 mut "hookEventName 打錯"       "$H" "s.replace('\"hookEventName\": \"PostToolUse\"', '\"hookEventName\": \"Zz\"')"
+# ── Bash 偵測 ──
+mut "Bash 路徑整條關掉"        "$H" "s.replace('name = _bash_target(command)', 'name = None')"
+mut "只要提到檔名就算"          "$H" "s.replace('m = RE_BASH_WRITE.search(command)', 'm = RE_NAME.search(command)')"
+mut "tee 分支拿掉"             "$H" "s.replace('sed\\\\s+-i\\\\S*|tee', 'sed\\\\s+-i\\\\S*')"
+mut "cp/mv 分支拿掉"           "$H" "s.replace(r'|(?:cp|mv)\\s+[^;&|\\n]*?{N}\\s*(?:\$|[;&|\\n])', '')"
+mut "cp/mv 不要求在結尾"        "$H" "s.replace(r'{N}\\s*(?:\$|[;&|\\n])', '{N}')"
+mut "檔名右界退回 word-boundary" "$H" "s.replace(r'(?:{n})(?![\\w.])', r'(?:{n})\\b')"
+mut "重導向允許任意前綴"        "$H" "s.replace(r'>>?\\s*(?:[^\\s;&|\\n]*/)?{N}', r'>>?\\s*[^\\s;&|\\n]*{N}')"
+mut "分隔符不含換行"           "$H" "s.replace('[^;&|\\\\n]', '[^;&|]')"
+mut "取名取第一個而非最後一個"   "$H" "s.replace('return hits[-1] if hits else None', 'return hits[0] if hits else None')"
+mut "sed/tee 改回 lazy"        "$H" "s.replace(r'|tee)\\b[^;&|\\n]*{N}', r'|tee)\\b[^;&|\\n]*?{N}')"
+mut "python 不要求寫入動詞"     "$H" "s.replace('RE_PY_TARGET.search(command) and RE_PY_VERB.search(command)', 'RE_PY_TARGET.search(command)')"
+mut "python 不認 f-string"     "$H" "s.replace(r'\\(\\s*f?', r'\\(\\s*')"
+mut "Bash stamp key 不加前綴"   "$H" "s.replace('path = \"bash:\" + command', 'path = name')"
+# ── 安裝器的 update 路徑 ──
+mut "update 吃掉別人的 hook"    "$I" "s.replace('        for e in movable:', '        entries[:] = movable\n        for e in movable:')"
+mut "身分判定退回子字串"        "$I" "s.replace('mine = [e for e in entries if _is_mine(e)]', 'mine = [e for e in entries if cmd in json.dumps(e)]')"
+mut "stale 退回 != MATCHER"     "$I" "s.replace('e.get(\"matcher\") in KNOWN_OLD', 'e.get(\"matcher\") != MATCHER')"
+mut "共用 entry 也改 matcher"   "$I" "s.replace('movable = [e for e in stale if _alone(e)]', 'movable = stale')"
+mut "多筆 mine 全改同值"        "$I" "s.replace('if len(mine) > 1:', 'if False:')"
+
 mut "安裝器覆蓋既有 PostToolUse" "$I" "s.replace('entries = d.setdefault(\"hooks\", {}).setdefault(\"PostToolUse\", [])', 'entries = []\n    d.setdefault(\"hooks\", {})[\"PostToolUse\"] = entries')"
 mut "安裝器不寫 hook 檔"        "$I" "s.replace('cp \"\$ASSETS/claude-md-hygiene-hook.py\"', ': \"\$ASSETS/claude-md-hygiene-hook.py\"')"
 

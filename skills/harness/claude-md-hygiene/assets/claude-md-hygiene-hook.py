@@ -18,31 +18,36 @@ import sys
 WATCHED = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude.local.md"}
 
 # **樣式由 WATCHED 導出，不要另抄一份清單。** 兩份會漂，而漂走的那半靜默失效。
-# 長的排前面：`.claude.local.md` 與 `CLAUDE.local.md` 互為對方的後綴。
+# 排序是為了未來加入互為後綴的名字；現況下大小寫不同，它是 no-op。
 _NAMES = "|".join(re.escape(n) for n in sorted(WATCHED, key=len, reverse=True))
+
+# 右界不能用 `\b`：`CLAUDE.md.bak` 後面接 `.`，`\b` 在那裡成立，備份檔會被當成本尊。
+_N = r"(?:{n})(?![\w.])".format(n=_NAMES)
 
 # Bash 改檔一律配不到 matcher 的 Write|Edit，而「優先用 Bash 改檔」是常見的
 # session 設定——那時這道守門靜默失效，輸出跟「這次沒動到常駐檔」一模一樣。
 #
-# **只認寫進去的形狀，不認單純提到檔名**：`cat CLAUDE.md`、`grep x CLAUDE.md`、
-# `git add CLAUDE.md` 都不該開火，而它們比真正的改動常見得多。
-# 管道與 `;`／`&&` 用 `[^;&|]*` 斷開，避免 `cat CLAUDE.md | tee other.md` 誤中。
+# **只認寫進去的形狀，不認單純提到檔名**——`cat` / `grep` / `git add` 比真正的改動常見得多。
+# `\n` 要跟 `;&|` 一起當分隔符，否則多行 script 裡「前面有 cp、後面提到檔名」就中。
+# cp/mv 的檔名要在指令段結尾（＝目的地），否則 `cp CLAUDE.md /tmp/bak/` 這種備份會中。
+# **不要加 `install` 分支**：它抓得到的量遠小於 `pip install` / `npm install` 誤中的量。
 RE_BASH_WRITE = re.compile(
-    r">>?\s*[^\s;&|]*(?:{n})\b"
-    r"|(?:sed\s+-i|tee|cp|mv|install)\b[^;&|]*?(?:{n})\b".format(n=_NAMES)
+    r">>?\s*(?:[^\s;&|\n]*/)?{N}"
+    # 這裡要貪婪：lazy 會停在第一個名字，而第一個常在 sed 樣式裡。
+    r"|(?:sed\s+-i\S*|tee)\b[^;&|\n]*{N}"
+    r"|(?:cp|mv)\s+[^;&|\n]*?{N}\s*(?:$|[;&|\n])".format(N=_N)
 )
-# heredoc 裡的 python 寫檔。**要求檔名出現在開檔呼叫的引數位置**，不是「兩者
-# 都在這包指令裡就算」——後者實測誤報：`git commit` 的訊息裡提到 CLAUDE.md，
-# 同一次呼叫又有個寫別的檔的 write_text，就會開火。而在這個 repo 裡「訊息提到
-# 常駐檔 + 順手改別的檔」是常態，不是離群值。
-#
-# 代價明講：**經過變數間接的寫檔抓不到**（`sub("CLAUDE.md", …)` 而 sub 內部才
-# `Path(path).write_text()`）。選這邊是因為誤報會讓人關掉整個 hook，漏抓只是
-# 回到裝之前——claim-check 的註解對同一個取捨也是這個方向。
-RE_PY_WRITE = re.compile(
-    r"(?:Path|open)\s*\(\s*[\"'][^\"']*(?:{n})".format(n=_NAMES)
+
+# heredoc 裡的 python 寫檔：**檔名要在開檔呼叫的引數位置，且整段要有寫入動詞。**
+# 放寬成「檔名與 write_text 都在這包指令裡」會中「commit 訊息提到常駐檔＋順手改別的檔」，
+# 而那在寫 harness 的 repo 是常態。動詞那半擋的是 `Path("CLAUDE.md").read_text()`。
+# **代價**：經過變數間接的寫檔抓不到。誤報會讓人關掉整個 hook，漏抓只是回到裝之前。
+RE_PY_TARGET = re.compile(
+    r"(?:Path|open)\s*\(\s*f?[\"'][^\"']*{N}"     # Path("CLAUDE.md") / open(f"…CLAUDE.md")
+    r"|/\s*f?[\"'][^\"']*{N}".format(N=_N)          # Path(d) / "CLAUDE.md"
 )
-RE_NAME = re.compile(_NAMES)
+RE_PY_VERB = re.compile(r"write_text|write_bytes|writelines|[\"']\s*[wa][b+]?[\"']")
+RE_NAME = re.compile(_N)
 
 MESSAGE = (
     "你剛編輯了常駐規範檔 {name}。它每個 session 都會被載入，而沒有任何測試會證偽它——"
@@ -56,16 +61,19 @@ MESSAGE = (
 
 
 def _bash_target(command):
-    """Bash 指令有沒有把某個常駐規範檔寫掉；有就回那個檔名。"""
+    """Bash 指令有沒有把某個常駐規範檔寫掉；有就回**被寫的那個**檔名。
+
+    取最後一個而非第一個：`sed -i '' 's/CLAUDE.md/X/' AGENTS.md` 的第一個在樣式裡。
+    """
     if not isinstance(command, str):
         return None
     m = RE_BASH_WRITE.search(command)
     if m:
-        hit = RE_NAME.search(m.group(0))
-        return hit.group(0) if hit else None
-    if RE_PY_WRITE.search(command):
-        hit = RE_NAME.search(command)
-        return hit.group(0) if hit else None
+        hits = RE_NAME.findall(m.group(0))
+        return hits[-1] if hits else None
+    if RE_PY_TARGET.search(command) and RE_PY_VERB.search(command):
+        hits = RE_NAME.findall(command)
+        return hits[-1] if hits else None
     return None
 
 
@@ -88,10 +96,13 @@ def main() -> int:
         if name not in WATCHED:
             return 0
     else:
-        name = _bash_target(tool_input.get("command"))
+        command = tool_input.get("command")
+        name = _bash_target(command)
         if name is None:
             return 0
-        path = name
+        # **key 不能跟 Write/Edit 那側撞**：撞了的話一次 Bash 誤報就燒掉該檔的
+        # 迴圈防護，之後真正的 Edit 靜音。按指令下 key，誤報只吵它自己那一次。
+        path = "bash:" + command
 
     # 迴圈防護只在拿得到 session_id 時做。退回一個固定的代用 key 會讓**所有**
     # session 共用同一個 stamp，而 stamp 不過期——那個檔案從此在每個 session 都
