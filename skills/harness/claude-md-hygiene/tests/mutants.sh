@@ -98,19 +98,27 @@ mut "tee 分支拿掉"             "$H" "s.replace('sed\\\\s+-i\\\\S*|tee', 'sed
 mut "cp/mv 分支拿掉"           "$H" 's.replace("(?:cp|mv)", "(?:zzzz)")'
 mut "cp/mv 不要求在結尾"        "$H" 's.replace("(?:"+chr(36)+"|[;&|", "(?:zz|[;&|")'
 mut "檔名右界退回 word-boundary" "$H" "s.replace(r'(?:{n})(?![\\w.])', r'(?:{n})\\b')"
-mut "重導向允許任意前綴"        "$H" 's.replace("(?:[^"+chr(92)+"s"+chr(92)+chr(34)+chr(39)+";&|"+chr(92)+"n]*/)?", "[^"+chr(92)+"s;&|"+chr(92)+"n]*")'
+mut "重導向不吃路徑"           "$H" 's.replace("(?:[^"+chr(92)+"s"+chr(92)+chr(34)+chr(39)+";&|"+chr(92)+"n]*/)?", "")'
 mut "分隔符不含換行"           "$H" "s.replace('[^;&|\\\\n]', '[^;&|]')"
 mut "取名取第一個而非最後一個"   "$H" "s.replace('return hits[-1] if hits else None', 'return hits[0] if hits else None')"
-mut "sed/tee 改回 lazy"        "$H" "s.replace(r'|tee)\\b[^;&|\\n]*{N}', r'|tee)\\b[^;&|\\n]*?{N}')"
+mut "sed/tee 改回 lazy"        "$H" 's.replace("|tee)"+chr(92)+"s[^;&|"+chr(92)+"n]*{N}", "|tee)"+chr(92)+"s[^;&|"+chr(92)+"n]*?{N}")'
 mut "python 不要求寫入動詞"     "$H" "s.replace('RE_PY_TARGET.search(command) and RE_PY_VERB.search(command)', 'RE_PY_TARGET.search(command)')"
 mut "python 不認 f-string"     "$H" "s.replace(r'\\(\\s*f?', r'\\(\\s*')"
+mut "不剝行內註解"             "$H" 's.replace("command = re.sub(r" + chr(34) + chr(92) + "s#[^" + chr(92) + "n]*" + chr(34) + ", " + chr(34)*2 + ", command)", "pass")'
+mut "檔名沒有左界"             "$H" 's.replace("(?<![" + chr(92) + "w.])(?:{n})", "(?:{n})")'
+mut "tee/cp 沒有左字界"        "$H" 's.replace(chr(92)+"b(?:g?sed", "(?:g?sed").replace(chr(92)+"b(?:cp|mv)", "(?:cp|mv)")'
+mut "tee 尾巴用 b 不用 s"      "$H" 's.replace("|tee)"+chr(92)+"s", "|tee)"+chr(92)+"b")'
+mut "重導向不管前面是什麼"      "$H" 's.replace("(?<![-"+chr(92)+"w])>>?", ">>?")'
+mut "cp/mv 右界只認段尾"        "$H" 's.replace("(?:"+chr(36)+"|[;&|"+chr(92)+"n#)]|"+chr(92)+"d?[<>])", "(?:"+chr(36)+"|[;&|"+chr(92)+"n])")'
+mut "mode 不綁在 open 內"      "$H" 's.replace("|open"+chr(92)+"([^)]*[" + chr(92)+chr(34)+chr(39) + "][rbt+]*[wax][rbt+]*[" + chr(92)+chr(34)+chr(39) + "]", "|[" + chr(92)+chr(34)+chr(39) + "]"+chr(92)+"s*[wa][b+]?[" + chr(92)+chr(34)+chr(39) + "]")'
+mut "stamp key 改用整包指令"    "$H" 's.replace(chr(34)+"bash:"+chr(34)+" + name", chr(34)+"bash:"+chr(34)+" + command")'
 mut "重導向不吃引號"           "$H" 's.replace(chr(91)+chr(92)+chr(34)+chr(39)+chr(93)+"?(?:[^", "(?:[^")'
 mut "cp/mv 不吃結尾引號"        "$H" 's.replace("{N}"+chr(91)+chr(92)+chr(34)+chr(39)+chr(93)+"?", "{N}")'
 mut "python 第二支不錨括號"     "$H" "s.replace(r'|\\)\\s*/\\s*f?', r'|/\\s*f?')"
 mut "payload 印到 stderr"      "$H" "s.replace('        sys.stdout,', '        sys.stderr,')"
 mut "非常駐檔的離開碼非 0"      "$H" "s.replace('        if name not in WATCHED:\n            return 0', '        if name not in WATCHED:\n            return 3')"
 mut "迴圈防護改成 SystemExit"   "$H" "s.replace('            if stamp.exists():\n                return 0', '            if stamp.exists():\n                raise SystemExit(chr(120))')"
-mut "Bash stamp key 不加前綴"   "$H" "s.replace('path = \"bash:\" + command', 'path = name')"
+mut "Bash stamp key 不加前綴"  "$H" 's.replace(chr(34)+"bash:"+chr(34)+" + name", "name")'
 # ── 安裝器的 update 路徑 ──
 mut "update 吃掉別人的 hook"    "$I" "s.replace('        for e in movable:', '        entries[:] = movable\n        for e in movable:')"
 mut "身分判定退回子字串"        "$I" "s.replace('mine = [e for e in entries if _is_mine(e)]', 'mine = [e for e in entries if cmd in json.dumps(e)]')"

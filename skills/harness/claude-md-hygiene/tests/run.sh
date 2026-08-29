@@ -201,6 +201,44 @@ cat CLAUDE.md')"
 fresh; quiet "tee 後換行提到" "$(bash_fire r4 'tee /tmp/x.md
 grep CLAUDE.md')"
 
+echo "── 尾隨註解不得把取名帶偏 ──"
+fresh; eq "sed + 尾隨註解" "CLAUDE.md" "$(bash_name c7 "sed -i '' s/a/b/ CLAUDE.md  # 同步 AGENTS.md")"
+fresh; eq "cp + 尾隨註解"  "CLAUDE.md" "$(bash_name c8 'cp new.md CLAUDE.md  # 覆蓋 AGENTS.md')"
+
+echo "── 迴圈防護按檔名，不按指令 ──"
+fresh
+ok "同檔第一個指令開火"   'additionalContext' "$(bash_fire k1 'cat > CLAUDE.md <<EOF')"
+quiet "同檔換個寫法不再開" "$(bash_fire k1 "sed -i '' s/a/b/ CLAUDE.md")"
+ok "別的檔仍開火"         'additionalContext' "$(bash_fire k1 'cat > AGENTS.md <<EOF')"
+
+echo "── shell 的 <目錄>/ \"NAME\" 即使同段有 python 寫入動詞也不算 ──"
+fresh; quiet "目錄後接檔名 + 別處有 write_text" \
+  "$(bash_fire j1 'ls docs/ "CLAUDE.md"; python3 -c "Path(chr(111)).write_text(s)"')"
+
+echo "── 前綴檔名不是本尊（左界；重導向以外的四條路原本全中）──"
+fresh; quiet "sed 改前綴檔"    "$(bash_fire w1 "sed -i '' s/a/b/ MY_CLAUDE.md")"
+fresh; quiet "cp 到前綴檔"     "$(bash_fire w2 'cp x.md MY_CLAUDE.md')"
+fresh; quiet "tee 前綴檔"      "$(bash_fire w3 'tee TEAM_AGENTS.md <<EOF')"
+fresh; quiet "python 寫前綴檔" "$(bash_fire w4 'Path("MY_CLAUDE.md").write_text(s)')"
+
+echo "── cp/mv 的右界不只段尾 ──"
+fresh; eq "加引號的目的地"   "CLAUDE.md" "$(bash_name x1 'cp new.md "CLAUDE.md"')"
+fresh; eq "後接重導向"       "CLAUDE.md" "$(bash_name x2 'cp new.md CLAUDE.md 2>/dev/null')"
+fresh; eq "後接註解"         "CLAUDE.md" "$(bash_name x3 'cp new.md CLAUDE.md  # 覆蓋')"
+
+echo "── 指令名的左字界與引數位 ──"
+fresh; quiet "tee 是 guarantee 的字尾" "$(bash_fire y1 'rg guarantee CLAUDE.md')"
+fresh; quiet "cp 是 tcp 的字尾"        "$(bash_fire y2 'grep tcp CLAUDE.md')"
+fresh; quiet "tee 後面必須是引數"      "$(bash_fire y3 'ls tee/ CLAUDE.md')"
+
+echo "── 引號內的箭頭不是重導向 ──"
+fresh; quiet "commit 訊息裡的 ->" "$(bash_fire z1 'git commit -m "docs: CLAUDE.md -> AGENTS.md"')"
+
+echo "── open 的 mode 要綁在呼叫內 ──"
+fresh; quiet "read 後接 .count(\"a\")" "$(bash_fire m1 'print(Path("CLAUDE.md").read_text().count("a"))')"
+fresh; quiet "read 後接 .replace"        "$(bash_fire m2 'print(open("CLAUDE.md").read().replace("a","b"))')"
+fresh; ok  "open 帶 wt 要開火" 'additionalContext' "$(bash_fire m3 'open("CLAUDE.md","wt").write(s)')"
+
 echo "── 加引號的寫入目標（缺口是「有引號、無斜線」）──"
 fresh; ok "重導向加引號"     'additionalContext' "$(bash_fire u1 'cat > "CLAUDE.md" <<EOF')"
 fresh; ok "重導向單引號"     'additionalContext' "$(bash_fire u2 "cat > 'AGENTS.md' <<EOF")"
