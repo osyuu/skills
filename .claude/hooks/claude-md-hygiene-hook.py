@@ -32,10 +32,12 @@ _N = r"(?:{n})(?![\w.])".format(n=_NAMES)
 # cp/mv 的檔名要在指令段結尾（＝目的地），否則 `cp CLAUDE.md /tmp/bak/` 這種備份會中。
 # **不要加 `install` 分支**：它抓得到的量遠小於 `pip install` / `npm install` 誤中的量。
 RE_BASH_WRITE = re.compile(
-    r">>?\s*(?:[^\s;&|\n]*/)?{N}"
+    # 寫入目標常常帶引號（`> "CLAUDE.md"`），所以引號要吃掉：少了它，
+    # 缺口精確地落在「有引號、無斜線」那一格。
+    r">>?\s*[\"']?(?:[^\s\"';&|\n]*/)?{N}"
     # 這裡要貪婪：lazy 會停在第一個名字，而第一個常在 sed 樣式裡。
     r"|(?:sed\s+-i\S*|tee)\b[^;&|\n]*{N}"
-    r"|(?:cp|mv)\s+[^;&|\n]*?{N}\s*(?:$|[;&|\n])".format(N=_N)
+    r"|(?:cp|mv)\s+[^;&|\n]*?{N}[\"']?\s*(?:$|[;&|\n])".format(N=_N)
 )
 
 # heredoc 裡的 python 寫檔：**檔名要在開檔呼叫的引數位置，且整段要有寫入動詞。**
@@ -44,7 +46,8 @@ RE_BASH_WRITE = re.compile(
 # **代價**：經過變數間接的寫檔抓不到。誤報會讓人關掉整個 hook，漏抓只是回到裝之前。
 RE_PY_TARGET = re.compile(
     r"(?:Path|open)\s*\(\s*f?[\"'][^\"']*{N}"     # Path("CLAUDE.md") / open(f"…CLAUDE.md")
-    r"|/\s*f?[\"'][^\"']*{N}".format(N=_N)          # Path(d) / "CLAUDE.md"
+    # 第二支要錨在收尾括號上。少了它會配到任何 shell 的 `<目錄>/ "CLAUDE.md"`。
+    r"|\)\s*/\s*f?[\"'][^\"']*{N}".format(N=_N)  # Path(d) / "CLAUDE.md"
 )
 RE_PY_VERB = re.compile(r"write_text|write_bytes|writelines|[\"']\s*[wa][b+]?[\"']")
 RE_NAME = re.compile(_N)

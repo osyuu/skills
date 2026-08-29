@@ -95,15 +95,21 @@ mut "hookEventName 打錯"       "$H" "s.replace('\"hookEventName\": \"PostToolU
 mut "Bash 路徑整條關掉"        "$H" "s.replace('name = _bash_target(command)', 'name = None')"
 mut "只要提到檔名就算"          "$H" "s.replace('m = RE_BASH_WRITE.search(command)', 'm = RE_NAME.search(command)')"
 mut "tee 分支拿掉"             "$H" "s.replace('sed\\\\s+-i\\\\S*|tee', 'sed\\\\s+-i\\\\S*')"
-mut "cp/mv 分支拿掉"           "$H" "s.replace(r'|(?:cp|mv)\\s+[^;&|\\n]*?{N}\\s*(?:\$|[;&|\\n])', '')"
-mut "cp/mv 不要求在結尾"        "$H" "s.replace(r'{N}\\s*(?:\$|[;&|\\n])', '{N}')"
+mut "cp/mv 分支拿掉"           "$H" 's.replace("(?:cp|mv)", "(?:zzzz)")'
+mut "cp/mv 不要求在結尾"        "$H" 's.replace("(?:"+chr(36)+"|[;&|", "(?:zz|[;&|")'
 mut "檔名右界退回 word-boundary" "$H" "s.replace(r'(?:{n})(?![\\w.])', r'(?:{n})\\b')"
-mut "重導向允許任意前綴"        "$H" "s.replace(r'>>?\\s*(?:[^\\s;&|\\n]*/)?{N}', r'>>?\\s*[^\\s;&|\\n]*{N}')"
+mut "重導向允許任意前綴"        "$H" 's.replace("(?:[^"+chr(92)+"s"+chr(92)+chr(34)+chr(39)+";&|"+chr(92)+"n]*/)?", "[^"+chr(92)+"s;&|"+chr(92)+"n]*")'
 mut "分隔符不含換行"           "$H" "s.replace('[^;&|\\\\n]', '[^;&|]')"
 mut "取名取第一個而非最後一個"   "$H" "s.replace('return hits[-1] if hits else None', 'return hits[0] if hits else None')"
 mut "sed/tee 改回 lazy"        "$H" "s.replace(r'|tee)\\b[^;&|\\n]*{N}', r'|tee)\\b[^;&|\\n]*?{N}')"
 mut "python 不要求寫入動詞"     "$H" "s.replace('RE_PY_TARGET.search(command) and RE_PY_VERB.search(command)', 'RE_PY_TARGET.search(command)')"
 mut "python 不認 f-string"     "$H" "s.replace(r'\\(\\s*f?', r'\\(\\s*')"
+mut "重導向不吃引號"           "$H" 's.replace(chr(91)+chr(92)+chr(34)+chr(39)+chr(93)+"?(?:[^", "(?:[^")'
+mut "cp/mv 不吃結尾引號"        "$H" 's.replace("{N}"+chr(91)+chr(92)+chr(34)+chr(39)+chr(93)+"?", "{N}")'
+mut "python 第二支不錨括號"     "$H" "s.replace(r'|\\)\\s*/\\s*f?', r'|/\\s*f?')"
+mut "payload 印到 stderr"      "$H" "s.replace('        sys.stdout,', '        sys.stderr,')"
+mut "非常駐檔的離開碼非 0"      "$H" "s.replace('        if name not in WATCHED:\n            return 0', '        if name not in WATCHED:\n            return 3')"
+mut "迴圈防護改成 SystemExit"   "$H" "s.replace('            if stamp.exists():\n                return 0', '            if stamp.exists():\n                raise SystemExit(chr(120))')"
 mut "Bash stamp key 不加前綴"   "$H" "s.replace('path = \"bash:\" + command', 'path = name')"
 # ── 安裝器的 update 路徑 ──
 mut "update 吃掉別人的 hook"    "$I" "s.replace('        for e in movable:', '        entries[:] = movable\n        for e in movable:')"

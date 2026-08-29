@@ -25,33 +25,59 @@ fail=0
 
 ok() { case "$3" in *"$2"*) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;;
   *) fail=$((fail+1)); printf '  FAIL  %s\n        期望含：%s\n        實得：%s\n' "$1" "$2" "$3" ;; esac; }
-# **crash 不得算通過。** `no` 斷言的是「輸出不含某字串」，而 traceback 也不含它——
-# hook 一炸，所有 no 斷言就 vacuously pass，而那正是本 repo 出過的假測試的成因結構。
+# 一般的「輸出不得含某字串」，用在安裝器那類非 hook 的檢查。
 no() { case "$3" in *Traceback*)
-    fail=$((fail+1)); printf '  FAIL  %s\n        hook 炸了（traceback）：%s\n' "$1" "$3" ;;
+    fail=$((fail+1)); printf '  FAIL  %s\n        炸了（traceback）：%s\n' "$1" "$3" ;;
   *"$2"*) fail=$((fail+1)); printf '  FAIL  %s\n        不該含：%s\n        實得：%s\n' "$1" "$2" "$3" ;;
   *) pass=$((pass+1)); printf '  ok    %s\n' "$1" ;; esac; }
+# **hook 呼叫的「沒開火」要求的是乾淨**，不是「輸出不含某字串」——後者被任何崩潰
+# 滿足：traceback 不含關鍵字，而 `SystemExit("msg")` 與 SyntaxError 連 traceback
+# 都不印。那正是本 repo 出過兩次的假測試成因結構。判準是 stdout 空 + 離開碼 0 +
+# stderr 空，三者缺一即紅。
+quiet() { if [ "$2" = "$CLEAN" ]; then pass=$((pass+1)); printf '  ok    %s\n' "$1"
+  else fail=$((fail+1)); printf '  FAIL  %s\n        期望乾淨的沒開火，實得：%s\n' "$1" "$2"; fi; }
 # 數字用 `case` 的子字串比對時 10 會被當成含 0、11 含 1。目前值域只有 0/1，但釘死比較便宜。
 eq() { if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %s\n' "$1"
   else fail=$((fail+1)); printf '  FAIL  %s\n        期望：%s\n        實得：%s\n' "$1" "$2" "$3"; fi; }
 
+# **stdout / 離開碼 / stderr 三者必須分開。**
+#   - `2>&1` 併流時，payload 從 stdout 改印 stderr 一樣通過所有斷言——而 Claude Code
+#     只讀 stdout，那在產品上是 100% 靜默失效。所以 stderr 只回報「有沒有」，內容
+#     不進比對字串。
+#   - 只看輸出的話，`SystemExit("msg")` 與 SyntaxError 都不印 traceback，於是崩潰
+#     跟「正確地沒開火」長得一樣。離開碼是唯一分得出來的東西。
+_invoke() {  # _invoke <payload>
+  _err="$TMPDIR/hook.err"
+  _out=$(printf '%s' "$1" | python3 "$HOOK" 2>"$_err"); _rc=$?
+  if [ -s "$_err" ]; then _e=yes; else _e=no; fi
+  printf '%s\n#rc=%s#err=%s' "$_out" "$_rc" "$_e"
+}
+# 乾淨的「沒開火」長這樣：stdout 空、離開碼 0、stderr 空。
+CLEAN="
+#rc=0#err=no"
+
 fire() {  # fire <session> <path>
-  printf '{"session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1" "$2" \
-    | python3 "$HOOK" 2>&1
+  _invoke "$(printf '{"session_id":"%s","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1" "$2")"
 }
 fresh() { rm -rf "$TMPDIR/claude-md-hygiene"; }
 
-bash_name() {  # bash_name <session> <command> — 印出 hook 報的檔名（沒開火則印 QUIET）
+# 崩潰不得被判成 QUIET——那讓「同一指令只開一次」那條斷言在崩潰時 vacuously pass。
+bash_name() {  # bash_name <session> <command>
   bash_fire "$1" "$2" | python3 -c 'import json,sys
-raw=sys.stdin.read()
-try: d=json.loads(raw)
-except Exception: print("QUIET" if "additionalContext" not in raw else "PARSE-FAIL"); raise SystemExit
-print(d["hookSpecificOutput"]["additionalContext"].split("常駐規範檔 ",1)[1].split("。",1)[0])'
+raw = sys.stdin.read()
+body, _, status = raw.rpartition("\n#rc=")
+if status.strip() != "0#err=no" or not body.strip():
+    print("QUIET" if (status.strip() == "0#err=no" and not body.strip()) else "CRASH:" + status.strip())
+    raise SystemExit
+try:
+    d = json.loads(body)
+except Exception:
+    print("PARSE-FAIL"); raise SystemExit
+print(d["hookSpecificOutput"]["additionalContext"].split("常駐規範檔 ", 1)[1].split("。", 1)[0])'
 }
 
 bash_fire() {  # bash_fire <session> <command>
-  python3 -c 'import json,sys; print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]}}))' "$1" "$2" \
-    | python3 "$HOOK" 2>&1
+  _invoke "$(python3 -c 'import json,sys; print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]}}))' "$1" "$2")"
 }
 
 echo "── 該注入的檔名 ──"
@@ -63,15 +89,15 @@ fresh; ok "訊息帶檔名"       'CLAUDE.local.md'   "$(fire s /r/CLAUDE.local.
 fresh; ok "hookEventName 正確" 'PostToolUse'     "$(fire s /r/CLAUDE.md)"
 
 echo "── 不該注入的 ──"
-fresh; no "README.md"        'additionalContext' "$(fire s /r/README.md)"
-fresh; no "claude.md 小寫"   'additionalContext' "$(fire s /r/claude.md)"
-fresh; no "CLAUDE.md.bak"    'additionalContext' "$(fire s /r/CLAUDE.md.bak)"
+fresh; quiet "README.md" "$(fire s /r/README.md)"
+fresh; quiet "claude.md 小寫" "$(fire s /r/claude.md)"
+fresh; quiet "CLAUDE.md.bak" "$(fire s /r/CLAUDE.md.bak)"
 fresh; no "沒有 file_path"   'additionalContext' "$(printf '{"session_id":"s"}' | python3 "$HOOK" 2>&1)"
 
 echo "── 迴圈防護 ──"
 fresh
 ok "第一次注入"           'additionalContext' "$(fire s1 /r/CLAUDE.md)"
-no "同 session 同檔不再注入" 'additionalContext' "$(fire s1 /r/CLAUDE.md)"
+quiet "同 session 同檔不再注入" "$(fire s1 /r/CLAUDE.md)"
 ok "同 session 換檔仍注入"   'additionalContext' "$(fire s1 /r/AGENTS.md)"
 ok "換 session 仍注入"       'additionalContext' "$(fire s2 /r/CLAUDE.md)"
 # 拿不到 session_id 時退回一個共用的固定 key，會讓那個路徑在**所有**未來的
@@ -84,7 +110,7 @@ ok "缺 session_id 不會就此靜音"  'additionalContext' "$(nosess)"
 # 用 logical 路徑會讓這條斷言測到「symlink 不解」而不是它要測的「相對 vs 絕對」。
 PHYS=$(pwd -P)
 fresh; ok "絕對路徑先開火"      'additionalContext' "$(fire s9 "$PHYS/CLAUDE.md")"
-no "同 session 相對路徑不重複注入" 'additionalContext' "$(fire s9 CLAUDE.md)"
+quiet "同 session 相對路徑不重複注入" "$(fire s9 CLAUDE.md)"
 # stamp 寫不進去時 hook 不得炸掉——它守的只是「別重複吵」，不值得讓整個 PostToolUse 失敗。
 RO="$SANDBOX/ro"; mkdir -p "$RO"; chmod 500 "$RO"
 ro_out=$(TMPDIR="$RO" sh -c "printf '{\"session_id\":\"sro\",\"tool_input\":{\"file_path\":\"/r/CLAUDE.md\"}}' | python3 '$HOOK'" 2>&1)
@@ -106,8 +132,10 @@ ok "file_path 是 null → exit 0" "0" "$?"
 echo "── 輸出必須是合法 JSON ──"
 fresh
 out=$(fire s /r/CLAUDE.md)
-printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null
-ok "stdout 解析得動" "0" "$?"
+# `fire` 的輸出尾端帶著狀態後綴（見 `_invoke`），解析前要剝掉。
+printf '%s' "${out%%$'\n'#rc=*}" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null
+eq "stdout 解析得動" "0" "$?"
+eq "payload 走 stdout、離開碼 0、stderr 空" "0#err=no" "${out##*#rc=}"
 
 newrepo() {
   d=$(mktemp -d "$SANDBOX/r.XXXXXX")
@@ -123,18 +151,18 @@ fresh; ok "python 寫檔"  'additionalContext' "$(bash_fire b4 'pathlib.Path("CL
 fresh; ok "cp 覆蓋"      'additionalContext' "$(bash_fire b5 'cp /tmp/n.md CLAUDE.local.md')"
 
 echo "── 只是提到檔名不得開火（誤報會讓人關掉整個 hook） ──"
-fresh; no "cat"          'additionalContext' "$(bash_fire c1 'cat CLAUDE.md')"
-fresh; no "grep"         'additionalContext' "$(bash_fire c2 'grep -n x CLAUDE.md README.md')"
-fresh; no "git add"      'additionalContext' "$(bash_fire c3 'git add CLAUDE.md')"
-fresh; no "管道到別的檔" 'additionalContext' "$(bash_fire c4 'cat CLAUDE.md | tee /tmp/backup.md')"
-fresh; no "寫別的檔"     'additionalContext' "$(bash_fire c5 'echo hi > notes.md')"
+fresh; quiet "cat" "$(bash_fire c1 'cat CLAUDE.md')"
+fresh; quiet "grep" "$(bash_fire c2 'grep -n x CLAUDE.md README.md')"
+fresh; quiet "git add" "$(bash_fire c3 'git add CLAUDE.md')"
+fresh; quiet "管道到別的檔" "$(bash_fire c4 'cat CLAUDE.md | tee /tmp/backup.md')"
+fresh; quiet "寫別的檔" "$(bash_fire c5 'echo hi > notes.md')"
 # 實測誤報：commit 訊息裡提到常駐檔，同一次呼叫又寫了別的檔。判定若只要求
 # 「檔名與 write_text 都在這包指令裡」就會中，而這個組合在寫 harness 的 repo 是常態。
 # 指令用變數組，不要塞進單引號字串——單引號裡沒有跳脫，硬寫會讓整支測試語法錯。
 Q=\'
 c6="python3 -c \"pathlib.Path(${Q}notes.conf${Q}).write_text(s)\"
 git commit -m \"docs: 說明 CLAUDE.md 的指標\""
-fresh; no "訊息提到＋改別的檔" 'additionalContext' "$(bash_fire c6 "$c6")"
+fresh; quiet "訊息提到＋改別的檔" "$(bash_fire c6 "$c6")"
 
 echo "── 誤報不得燒掉 Write/Edit 的 stamp（stamp key 必須分開）──"
 # **路徑要用 python 的 cwd，不能用 $PWD。** macOS 的 mktemp 給的是 /var/...，
@@ -156,22 +184,32 @@ fresh; eq "重導向含路徑"          "AGENTS.md"        "$(bash_name n4 'cat 
 fresh; eq "cp 目的地"             "CLAUDE.local.md"  "$(bash_name n5 'cp /tmp/n.md CLAUDE.local.md')"
 
 echo "── 讀取／備份／同名前後綴不得開火 ──"
-fresh; no "cp 來源是常駐檔"   'additionalContext' "$(bash_fire q1 'cp CLAUDE.md /tmp/bak/')"
-fresh; no "備份成 .bak"       'additionalContext' "$(bash_fire q2 'cp CLAUDE.md CLAUDE.md.bak')"
-fresh; no "寫 .bak"           'additionalContext' "$(bash_fire q3 'cat x > CLAUDE.md.bak')"
-fresh; no "同前綴的別的檔"    'additionalContext' "$(bash_fire q4 'cat > MY_CLAUDE.md <<EOF')"
-fresh; no "python 讀"         'additionalContext' "$(bash_fire q5 'pathlib.Path("CLAUDE.md").read_text()')"
-fresh; no "open 讀"           'additionalContext' "$(bash_fire q6 'open("CLAUDE.md").read()')"
+fresh; quiet "cp 來源是常駐檔" "$(bash_fire q1 'cp CLAUDE.md /tmp/bak/')"
+fresh; quiet "備份成 .bak" "$(bash_fire q2 'cp CLAUDE.md CLAUDE.md.bak')"
+fresh; quiet "寫 .bak" "$(bash_fire q3 'cat x > CLAUDE.md.bak')"
+fresh; quiet "同前綴的別的檔" "$(bash_fire q4 'cat > MY_CLAUDE.md <<EOF')"
+fresh; quiet "python 讀" "$(bash_fire q5 'pathlib.Path("CLAUDE.md").read_text()')"
+fresh; quiet "open 讀" "$(bash_fire q6 'open("CLAUDE.md").read()')"
 
 echo "── 換行是分隔符，且 install 不是寫檔動詞 ──"
-fresh; no "cp 後換行提到"     'additionalContext' "$(bash_fire r1 'cp a.md b.md
+fresh; quiet "cp 後換行提到" "$(bash_fire r1 'cp a.md b.md
 git add CLAUDE.md')"
-fresh; no "mv 後換行提到"     'additionalContext' "$(bash_fire r2 'mv old.md new.md
+fresh; quiet "mv 後換行提到" "$(bash_fire r2 'mv old.md new.md
 grep -n hook CLAUDE.md')"
-fresh; no "pip install"       'additionalContext' "$(bash_fire r3 'pip install -r req.txt
+fresh; quiet "pip install" "$(bash_fire r3 'pip install -r req.txt
 cat CLAUDE.md')"
-fresh; no "tee 後換行提到"    'additionalContext' "$(bash_fire r4 'tee /tmp/x.md
+fresh; quiet "tee 後換行提到" "$(bash_fire r4 'tee /tmp/x.md
 grep CLAUDE.md')"
+
+echo "── 加引號的寫入目標（缺口是「有引號、無斜線」）──"
+fresh; ok "重導向加引號"     'additionalContext' "$(bash_fire u1 'cat > "CLAUDE.md" <<EOF')"
+fresh; ok "重導向單引號"     'additionalContext' "$(bash_fire u2 "cat > 'AGENTS.md' <<EOF")"
+fresh; ok "cp 目的地加引號"  'additionalContext' "$(bash_fire u3 'cp /tmp/n.md "CLAUDE.md"')"
+fresh; eq "加引號也報對檔名" "CLAUDE.md" "$(bash_name u4 'cat > "CLAUDE.md" <<EOF')"
+
+echo "── shell 的 <目錄>/ \"NAME\" 不是 python 的 Path(d) / \"NAME\" ──"
+fresh; quiet "grep 帶目錄與檔名" "$(bash_fire v1 'grep -rn "w" docs/ "CLAUDE.md"')"
+fresh; quiet "ls 帶目錄與檔名"   "$(bash_fire v2 'ls -la docs/ "CLAUDE.md"')"
 
 echo "── python 寫檔的其他慣用寫法 ──"
 fresh; ok "f-string"          'additionalContext' "$(bash_fire s1 'open(f"{d}/CLAUDE.md","w").write(s)')"
