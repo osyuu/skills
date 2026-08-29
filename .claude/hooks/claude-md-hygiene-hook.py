@@ -18,31 +18,50 @@ import sys
 WATCHED = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude.local.md"}
 
 # **樣式由 WATCHED 導出，不要另抄一份清單。** 兩份會漂，而漂走的那半靜默失效。
-# 長的排前面：`.claude.local.md` 與 `CLAUDE.local.md` 互為對方的後綴。
+# 排序是為了未來加入互為後綴的名字；現況下大小寫不同，它是 no-op。
 _NAMES = "|".join(re.escape(n) for n in sorted(WATCHED, key=len, reverse=True))
+
+# 右界不能用 `\b`：`CLAUDE.md.bak` 後面接 `.`，`\b` 在那裡成立，備份檔會被當成本尊。
+# 左右界都要有。右界擋 `CLAUDE.md.bak`；**左界擋 `MY_CLAUDE.md`**——少了它，除了
+# 重導向那條（靠 `>` 錨住）以外的四條路全部把前綴檔當成本尊。
+_N = r"(?<![\w.])(?:{n})(?![\w.])".format(n=_NAMES)
 
 # Bash 改檔一律配不到 matcher 的 Write|Edit，而「優先用 Bash 改檔」是常見的
 # session 設定——那時這道守門靜默失效，輸出跟「這次沒動到常駐檔」一模一樣。
 #
-# **只認寫進去的形狀，不認單純提到檔名**：`cat CLAUDE.md`、`grep x CLAUDE.md`、
-# `git add CLAUDE.md` 都不該開火，而它們比真正的改動常見得多。
-# 管道與 `;`／`&&` 用 `[^;&|]*` 斷開，避免 `cat CLAUDE.md | tee other.md` 誤中。
+# **只認寫進去的形狀，不認單純提到檔名**——`cat` / `grep` / `git add` 比真正的改動常見得多。
+# `\n` 要跟 `;&|` 一起當分隔符，否則多行 script 裡「前面有 cp、後面提到檔名」就中。
+# cp/mv 的檔名要在指令段結尾（＝目的地），否則 `cp CLAUDE.md /tmp/bak/` 這種備份會中。
+# **不要加 `install` 分支**：它抓得到的量遠小於 `pip install` / `npm install` 誤中的量。
 RE_BASH_WRITE = re.compile(
-    r">>?\s*[^\s;&|]*(?:{n})\b"
-    r"|(?:sed\s+-i|tee|cp|mv|install)\b[^;&|]*?(?:{n})\b".format(n=_NAMES)
+    # `>` 前面不准是 `-` 或字元，否則 `-m "CLAUDE.md -> AGENTS.md"` 這種箭頭會中。
+    # 目標常帶引號，所以引號要吃掉——缺口精確地落在「有引號、無斜線」那一格。
+    r"(?<![-\w])>>?\s*[\"']?(?:[^\s\"';&|\n]*/)?{N}"
+    # 這裡要貪婪：lazy 會停在第一個名字，而第一個常在 sed 樣式裡。
+    # 左邊的 `\b` 不能省：`tee` 是 `guarantee`／`committee` 的字尾，`cp` 是 `tcp` 的。
+    # 尾巴用 `\s` 不用 `\b`：`tee` 後面必須是引數，而 `\b` 在 `ls tee/` 的斜線前也成立。
+    r"|\b(?:g?sed\s+-i\S*|tee)\s[^;&|\n<]*{N}"
+    # 右界不能只認段尾：`cp x "CLAUDE.md"`、`2>/dev/null`、尾隨註解、子 shell 都真的在寫。
+    r"|\b(?:cp|mv)\s+[^;&|\n]*?{N}[\"']?\s*(?:$|[;&|\n#)]|\d?[<>])".format(N=_N)
 )
-# heredoc 裡的 python 寫檔。**要求檔名出現在開檔呼叫的引數位置**，不是「兩者
-# 都在這包指令裡就算」——後者實測誤報：`git commit` 的訊息裡提到 CLAUDE.md，
-# 同一次呼叫又有個寫別的檔的 write_text，就會開火。而在這個 repo 裡「訊息提到
-# 常駐檔 + 順手改別的檔」是常態，不是離群值。
-#
-# 代價明講：**經過變數間接的寫檔抓不到**（`sub("CLAUDE.md", …)` 而 sub 內部才
-# `Path(path).write_text()`）。選這邊是因為誤報會讓人關掉整個 hook，漏抓只是
-# 回到裝之前——claim-check 的註解對同一個取捨也是這個方向。
-RE_PY_WRITE = re.compile(
-    r"(?:Path|open)\s*\(\s*[\"'][^\"']*(?:{n})".format(n=_NAMES)
+
+# heredoc 裡的 python 寫檔：**檔名要在開檔呼叫的引數位置，且整段要有寫入動詞。**
+# 放寬成「檔名與 write_text 都在這包指令裡」會中「commit 訊息提到常駐檔＋順手改別的檔」，
+# 而那在寫 harness 的 repo 是常態。動詞那半擋的是 `Path("CLAUDE.md").read_text()`。
+# **代價**：經過變數間接的寫檔抓不到。誤報會讓人關掉整個 hook，漏抓只是回到裝之前。
+RE_PY_TARGET = re.compile(
+    r"(?:Path|open)\s*\(\s*f?[\"'][^\"']*{N}"     # Path("CLAUDE.md") / open(f"…CLAUDE.md")
+    # 第二支要錨在收尾括號上。少了它會配到任何 shell 的 `<目錄>/ "CLAUDE.md"`。
+    r"|\)\s*/\s*f?[\"'][^\"']*{N}".format(N=_N)  # Path(d) / "CLAUDE.md"
 )
-RE_NAME = re.compile(_NAMES)
+RE_PY_VERB = re.compile(
+    r"write_text|write_bytes|writelines|\.write\("
+    # mode 要綁在 open 的引數內。掃整包指令的話 `.count("a")`、`.replace("a","b")`、
+    # `awk -F'a'` 都會讓純讀取開火——那些比真正的寫入常見得多。
+    r"|open\([^)]*[\"'][rbt+]*[wax][rbt+]*[\"']"
+)
+RE_PY_READ = re.compile(r"[\"']?\s*\)\s*\.\s*read")
+RE_NAME = re.compile(_N)
 
 MESSAGE = (
     "你剛編輯了常駐規範檔 {name}。它每個 session 都會被載入，而沒有任何測試會證偽它——"
@@ -56,16 +75,36 @@ MESSAGE = (
 
 
 def _bash_target(command):
-    """Bash 指令有沒有把某個常駐規範檔寫掉；有就回那個檔名。"""
+    """Bash 指令有沒有把某個常駐規範檔寫掉；有就回**被寫的那個**檔名。
+
+    取最後一個而非第一個：`sed -i '' 's/CLAUDE.md/X/' AGENTS.md` 的第一個在樣式裡。
+
+    **已知會報錯檔名**：同一段裡第二個名字出現在被寫的那個之後時（`sed -i -e s/x/y/
+    CLAUDE.md -e s/AGENTS.md/z/`）。要真的分辨得先做分詞，而報錯檔名的代價是「agent
+    被叫去複查沒改過的檔」——比漏抓輕，比誤報重。尾隨的 `#` 註解是其中最常見的一種，
+    那一種在下面剝掉了。
+    """
     if not isinstance(command, str):
         return None
+    # 反斜線續行在 shell 是同一個指令段，但 `\n` 是分隔符——不先正規化的話
+    # `sed -i '' \⏎ 's/a/b/' CLAUDE.md` 這種常見寫法整條漏抓。
+    command = re.sub(r"\\\n\s*", " ", command)
+    # 剝掉行內註解：`# 同步 AGENTS.md` 這種尾巴會讓取名取到沒被寫的那個。
+    # 引號裡的 `#` 也會被剝掉——刻意的近似，分詞的成本大於它換到的準確度。
+    command = re.sub(r"\s#[^\n]*", "", command)
     m = RE_BASH_WRITE.search(command)
     if m:
-        hit = RE_NAME.search(m.group(0))
-        return hit.group(0) if hit else None
-    if RE_PY_WRITE.search(command):
-        hit = RE_NAME.search(command)
-        return hit.group(0) if hit else None
+        hits = RE_NAME.findall(m.group(0))
+        return hits[-1] if hits else None
+    # **取名要在 target 的 match 上，不能在整包指令上**：後者會把
+    # `&& git add CLAUDE.md AGENTS.md` 的引數也算進來，報一個沒被寫的檔。
+    # 動詞是在整包指令上搜的（跨行的 `p = Path(x)` … `p.write_text()` 只能這樣接），
+    # 代價是「讀常駐檔 + 寫別的檔」會誤報。所以再看一眼：target 自己那次呼叫如果
+    # 緊接著 `.read…`，那它就是被讀的那個，別人的寫入動詞不算在它頭上。
+    t = RE_PY_TARGET.search(command)
+    if t and RE_PY_VERB.search(command) and not RE_PY_READ.match(command, t.end()):
+        hits = RE_NAME.findall(t.group(0))
+        return hits[-1] if hits else None
     return None
 
 
@@ -88,10 +127,17 @@ def main() -> int:
         if name not in WATCHED:
             return 0
     else:
-        name = _bash_target(tool_input.get("command"))
+        command = tool_input.get("command")
+        name = _bash_target(command)
         if name is None:
             return 0
-        path = name
+        # **key 不能跟 Write/Edit 那側撞**：撞了的話一次 Bash 誤報就燒掉該檔的
+        # 迴圈防護，之後真正的 Edit 靜音。按指令下 key，誤報只吵它自己那一次。
+        # 按**檔名**下 key（前綴避免與 Write/Edit 的絕對路徑相撞）。按整包指令的話
+        # 同一個檔換個寫法就再開一槍，而 `abspath` 對非路徑字串做正規化：`//` 折疊
+        # 讓兩個指令共用 key、`/../` 把 `bash:` 前綴整段吃掉。
+        # 代價：一次 Bash 誤報會靜音該檔後續的 Bash 偵測，Write/Edit 不受影響。
+        path = "bash:" + name
 
     # 迴圈防護只在拿得到 session_id 時做。退回一個固定的代用 key 會讓**所有**
     # session 共用同一個 stamp，而 stamp 不過期——那個檔案從此在每個 session 都
