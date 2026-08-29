@@ -28,6 +28,7 @@ description: >-
 | 既有慣例 | `CLAUDE.md` / `AGENTS.md` 與它們 `^@` import 進來的檔、repo 自己的規範文件(`CONTRIBUTING.md`、`docs/`、`conventions/` 之類)、各生態自己的 linter 設定檔 | 這個 repo 適用的 review skill,它的 checklist 哪幾條要**以專案為準** |
 | 工作進料 | `git remote -v`、有沒有 issue tracker 相關的本機 skill、本機的暫存/筆記目錄(有的話) | 需求從哪來 |
 | 版控佈局 | `git rev-parse --git-common-dir`、`git worktree list` | 是不是 linked worktree(`.git` 是檔案,`.git/info/exclude` 追加會失敗) |
+| 使用者層設定 | `~/.claude/settings.json`(hooks/permissions/attribution)、`settings.local.json`、使用者的常駐指南、`~/.claude/hooks/` 與各 skill 的使用者層 conf | 哪些是被 per-repo 佈線取代掉、卻還留著的舊件——**預設當舊件,逐條翻案**(見第 2 步) |
 | session 語言 | 使用者的常駐指南、近期對話 | 宣稱詞表要哪一種語言——**只認一種語言的規則,在另一種語言的 session 永遠零開火**。內建中英各一半,其餘語言填進 `claim-check.conf` 的 `CLAIM_*_CLAIM_RE`(repo 的 `hooks/` 或使用者層的 `~/.claude/` 都讀得到)。第 5 步一律用**這個 session 的語言**造違規來驗 |
 
 上面那張表是**起點,不是窮舉**。用一條指令列全,深度無關:
@@ -80,7 +81,24 @@ monorepo 的建置檔常在 depth 2(`packages/api/package.json`),所以用 `git 
     真正的決定是「`hooks/` 進不進版控」。
   - **PostToolUse / Stop 家族**落在 settings 檔。`.claude/settings.json` 是 tracked(隊友也跑),
     `.claude/settings.local.json` 不是(只有你)。**注意各安裝器的預設不一致**,裝之前先看它寫哪。
-  - **使用者層的守門**(裝在 `~/.claude/`)跨所有 repo,**這題不該問**——它不是 per-repo 決定。
+  - **使用者層的守門**(裝在 `~/.claude/`)跨所有 repo,**「要不要裝」這題不該問**——它不是 per-repo
+    決定。但**「它現在的內容還對不對」要查**,見下一節。
+- **與使用者層對帳**——**這一節不是問使用者「哪邊贏」,是逐條判「哪一邊是舊的」。**
+  使用者層是 per-machine、靠人記得維護的那層;這支 skill 存在的理由就是讓佈線跟著 repo 走。
+  所以**預設把使用者層當舊件**,再逐條翻案。三種結果,不要整批打包:
+
+  | 判定 | 長什麼樣 | 怎麼辦 |
+  |---|---|---|
+  | 使用者層是舊的 | 某個 skill 的使用者層 conf,工具鏈只認另一個生態(空的 `CLAIM_MUTATE_RE` + 內建 codegen 全是 Flutter,而這是 Swift repo);`settings.local.json` 的每一條都已在 `settings.json` 裡 | 搬進 repo 的 `hooks/`,或刪掉 |
+  | 使用者層是對的,違反它的是別人 | `attribution.commit` 設成空(不要署名),而 agent 仍在 commit 訊息尾端加署名行 | 改行為,不是改設定 |
+  | 根本不是衝突 | `skillOverrides` 把某個同名的 plugin skill 關掉,讓本機版生效 | 不動 |
+
+  **這節防的是「衝突就發生在 onboard 過程本身」。** 實測踩過:onboard 產生的頭三個 commit
+  全都帶著使用者已經明確關掉的署名行,而那三顆正是這次 onboard 的產物——沒人對帳的話,
+  它會一路 push 出去,而修正成本在推出去之後翻倍。
+
+  對帳結果**沒有任何 conf 收容**,寫進第 3 步的 profile。
+
 - **哪些 checklist 條目以專案為準**:探測到的衝突逐條列出來確認。
   **這類衝突通常是通用 checklist 輸**:專案的慣例文件是刻意寫下的決定,checklist 是別處
   帶來的預設值。衝突沒問出來的話,review 會把「專案規範本身」整批報成 anti-pattern,
@@ -98,7 +116,8 @@ monorepo 的建置檔常在 depth 2(`packages/api/package.json`),所以用 `git 
 `hooks/repo-profile.conf` 是**索引與存放處,不是來源**:記那些沒有任何 conf 收容、
 但下一個 session 或換機的你需要知道的事——探測到的技術棧與各自的指令、session 語言、
 issue tracker 怎麼取票、設計書落點、**開一個 worktree 要跑哪幾步**(那決定並行的門檻,
-而它是 per-repo 的)。**目前沒有任何腳本讀這一份**,它的讀者是人與下一個 agent。
+而它是 per-repo 的)、以及第 2 步的**使用者層對帳結果**。
+**目前沒有任何腳本讀這一份**,它的讀者是人與下一個 agent。
 
 在 `CLAUDE.md` 留一句指標指過去(**只留指標**,清單本身不進 CLAUDE.md——它會漂)。
 
@@ -129,7 +148,7 @@ pre-commit 型,Stop / PostToolUse 型要用該 skill 自己的方式(例如 `--r
 
 ## 完成的定義
 
-**五條全滿足才算 onboard 完**;缺任一條就明說缺哪條,不要說「配好了」。
+**六條全滿足才算 onboard 完**;缺任一條就明說缺哪條,不要說「配好了」。
 
 1. **每一份被守門 source 的 conf 都填過**,而且裡面**沒有別的生態留下的預設值**——
    有些模板出廠就帶著可用但屬於另一個語言的值,且**沒標 `<TODO>`**,只查 TODO 看不到它們。
@@ -163,5 +182,8 @@ pre-commit 型,Stop / PostToolUse 型要用該 skill 自己的方式(例如 `--r
    有字但等於沒歸類仍然填得出新的花樣,這條擋的是已知的那幾種,不是全部。
 5. `CLAUDE.md` 有指標指向 conf,而且**在 linked worktree 裡也指得到**——git-excluded 的目標
    對隊友、對自己的 worktree 都是懸空指標,而「開了新 worktree」正是這支要服務的情境之一。
+6. **使用者層對帳的結果落在 profile**,每一項標明是三種判定的哪一種。
+   **沒查到衝突也要寫一行「對帳過,無」**——這一節不在任何指令的輸出裡,沒有東西會提醒你
+   跳過了它,而空著跟「查過沒事」在畫面上完全一樣。第 2 步那張表就是判定的欄位。
 
 配置完成後,開發走 `dev-loop`。
