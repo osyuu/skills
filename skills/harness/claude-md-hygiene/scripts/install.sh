@@ -24,6 +24,10 @@ import json, pathlib
 
 p = pathlib.Path(".claude/settings.json")
 cmd = "python3 .claude/hooks/claude-md-hygiene-hook.py"
+# Bash 要在裡面：session 設定要求「優先用 Bash 改檔」時，Write|Edit 一個都配不到，
+# 而失效是靜默的——輸出跟「這次沒動到常駐檔」完全相同。hook 自己會分辨那個 Bash
+# 指令有沒有真的寫進常駐檔，所以多收的那些不會變成噪音。
+MATCHER = "Write|Edit|Bash"
 
 if p.exists():
     try:
@@ -36,12 +40,22 @@ else:
 # **附加而不是取代**：PostToolUse 可能已經掛了別人的 hook（formatter、linter），
 # 整條覆蓋會靜默停用它們。
 entries = d.setdefault("hooks", {}).setdefault("PostToolUse", [])
-if any(cmd in json.dumps(e) for e in entries):
-    print("claude-md-hygiene: PostToolUse hook 已註冊，跳過。")
-else:
-    entries.append({"matcher": "Write|Edit", "hooks": [{"type": "command", "command": cmd}]})
+mine = [e for e in entries if cmd in json.dumps(e)]
+if not mine:
+    entries.append({"matcher": MATCHER, "hooks": [{"type": "command", "command": cmd}]})
     p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
     print("claude-md-hygiene: 已註冊 PostToolUse hook（.claude/settings.json）")
+else:
+    # **不能只在「沒裝過」時才寫。** matcher 改了之後，已裝的 repo 重跑安裝器
+    # 若只印「跳過」，修正就永遠到不了它們——而那正是最需要它的那些 repo。
+    stale = [e for e in mine if e.get("matcher") != MATCHER]
+    if stale:
+        for e in stale:
+            e["matcher"] = MATCHER
+        p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
+        print("claude-md-hygiene: matcher 已更新為 %s" % MATCHER)
+    else:
+        print("claude-md-hygiene: PostToolUse hook 已註冊，跳過。")
 PY
 
 echo

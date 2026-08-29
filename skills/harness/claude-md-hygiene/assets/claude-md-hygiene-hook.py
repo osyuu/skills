@@ -12,9 +12,37 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 
 WATCHED = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".claude.local.md"}
+
+# **樣式由 WATCHED 導出，不要另抄一份清單。** 兩份會漂，而漂走的那半靜默失效。
+# 長的排前面：`.claude.local.md` 與 `CLAUDE.local.md` 互為對方的後綴。
+_NAMES = "|".join(re.escape(n) for n in sorted(WATCHED, key=len, reverse=True))
+
+# Bash 改檔一律配不到 matcher 的 Write|Edit，而「優先用 Bash 改檔」是常見的
+# session 設定——那時這道守門靜默失效，輸出跟「這次沒動到常駐檔」一模一樣。
+#
+# **只認寫進去的形狀，不認單純提到檔名**：`cat CLAUDE.md`、`grep x CLAUDE.md`、
+# `git add CLAUDE.md` 都不該開火，而它們比真正的改動常見得多。
+# 管道與 `;`／`&&` 用 `[^;&|]*` 斷開，避免 `cat CLAUDE.md | tee other.md` 誤中。
+RE_BASH_WRITE = re.compile(
+    r">>?\s*[^\s;&|]*(?:{n})\b"
+    r"|(?:sed\s+-i|tee|cp|mv|install)\b[^;&|]*?(?:{n})\b".format(n=_NAMES)
+)
+# heredoc 裡的 python 寫檔。**要求檔名出現在開檔呼叫的引數位置**，不是「兩者
+# 都在這包指令裡就算」——後者實測誤報：`git commit` 的訊息裡提到 CLAUDE.md，
+# 同一次呼叫又有個寫別的檔的 write_text，就會開火。而在這個 repo 裡「訊息提到
+# 常駐檔 + 順手改別的檔」是常態，不是離群值。
+#
+# 代價明講：**經過變數間接的寫檔抓不到**（`sub("CLAUDE.md", …)` 而 sub 內部才
+# `Path(path).write_text()`）。選這邊是因為誤報會讓人關掉整個 hook，漏抓只是
+# 回到裝之前——claim-check 的註解對同一個取捨也是這個方向。
+RE_PY_WRITE = re.compile(
+    r"(?:Path|open)\s*\(\s*[\"'][^\"']*(?:{n})".format(n=_NAMES)
+)
+RE_NAME = re.compile(_NAMES)
 
 MESSAGE = (
     "你剛編輯了常駐規範檔 {name}。它每個 session 都會被載入，而沒有任何測試會證偽它——"
@@ -25,6 +53,20 @@ MESSAGE = (
     "3. 提到的 symbol、路徑、旗標現在還存在嗎？行為主張現在還成立嗎？\n"
     "確認沒問題就繼續，不必回報。"
 )
+
+
+def _bash_target(command):
+    """Bash 指令有沒有把某個常駐規範檔寫掉；有就回那個檔名。"""
+    if not isinstance(command, str):
+        return None
+    m = RE_BASH_WRITE.search(command)
+    if m:
+        hit = RE_NAME.search(m.group(0))
+        return hit.group(0) if hit else None
+    if RE_PY_WRITE.search(command):
+        hit = RE_NAME.search(command)
+        return hit.group(0) if hit else None
+    return None
 
 
 def main() -> int:
@@ -41,11 +83,15 @@ def main() -> int:
     if not isinstance(tool_input, dict):
         return 0
     path = tool_input.get("file_path")
-    if not isinstance(path, str):
-        return 0
-    name = os.path.basename(path)
-    if name not in WATCHED:
-        return 0
+    if isinstance(path, str):
+        name = os.path.basename(path)
+        if name not in WATCHED:
+            return 0
+    else:
+        name = _bash_target(tool_input.get("command"))
+        if name is None:
+            return 0
+        path = name
 
     # 迴圈防護只在拿得到 session_id 時做。退回一個固定的代用 key 會讓**所有**
     # session 共用同一個 stamp，而 stamp 不過期——那個檔案從此在每個 session 都

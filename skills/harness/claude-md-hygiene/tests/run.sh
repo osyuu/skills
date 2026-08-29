@@ -34,6 +34,11 @@ fire() {  # fire <session> <path>
 }
 fresh() { rm -rf "$TMPDIR/claude-md-hygiene"; }
 
+bash_fire() {  # bash_fire <session> <command>
+  python3 -c 'import json,sys; print(json.dumps({"session_id":sys.argv[1],"tool_name":"Bash","tool_input":{"command":sys.argv[2]}}))' "$1" "$2" \
+    | python3 "$HOOK" 2>&1
+}
+
 echo "── 該注入的檔名 ──"
 fresh; ok "CLAUDE.md"       'additionalContext' "$(fire s /r/CLAUDE.md)"
 fresh; ok "AGENTS.md"       'additionalContext' "$(fire s /r/AGENTS.md)"
@@ -95,6 +100,27 @@ newrepo() {
   printf '%s' "$d"
 }
 
+echo "── Bash 改常駐檔也要開火（matcher 的 Write|Edit 配不到） ──"
+fresh; ok "重導向覆寫"   'additionalContext' "$(bash_fire b1 'cat > CLAUDE.md <<EOF')"
+fresh; ok "追加"         'additionalContext' "$(bash_fire b2 'printf x >> docs/AGENTS.md')"
+fresh; ok "sed -i"       'additionalContext' "$(bash_fire b3 "sed -i '' s/a/b/ CLAUDE.md")"
+fresh; ok "python 寫檔"  'additionalContext' "$(bash_fire b4 'pathlib.Path("CLAUDE.md").write_text(s)')"
+fresh; ok "cp 覆蓋"      'additionalContext' "$(bash_fire b5 'cp /tmp/n.md CLAUDE.local.md')"
+
+echo "── 只是提到檔名不得開火（誤報會讓人關掉整個 hook） ──"
+fresh; no "cat"          'additionalContext' "$(bash_fire c1 'cat CLAUDE.md')"
+fresh; no "grep"         'additionalContext' "$(bash_fire c2 'grep -n x CLAUDE.md README.md')"
+fresh; no "git add"      'additionalContext' "$(bash_fire c3 'git add CLAUDE.md')"
+fresh; no "管道到別的檔" 'additionalContext' "$(bash_fire c4 'cat CLAUDE.md | tee /tmp/backup.md')"
+fresh; no "寫別的檔"     'additionalContext' "$(bash_fire c5 'echo hi > notes.md')"
+# 實測誤報：commit 訊息裡提到常駐檔，同一次呼叫又寫了別的檔。判定若只要求
+# 「檔名與 write_text 都在這包指令裡」就會中，而這個組合在寫 harness 的 repo 是常態。
+# 指令用變數組，不要塞進單引號字串——單引號裡沒有跳脫，硬寫會讓整支測試語法錯。
+Q=\'
+c6="python3 -c \"pathlib.Path(${Q}notes.conf${Q}).write_text(s)\"
+git commit -m \"docs: 說明 CLAUDE.md 的指標\""
+fresh; no "訊息提到＋改別的檔" 'additionalContext' "$(bash_fire c6 "$c6")"
+
 echo "── 安裝器 ──"
 D=$(newrepo); cd "$D"
 sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
@@ -103,6 +129,17 @@ ok "settings 註冊了" "claude-md-hygiene-hook.py" "$(cat .claude/settings.json
 sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
 n=$(python3 -c "import json;print(len(json.load(open('.claude/settings.json'))['hooks']['PostToolUse']))")
 ok "重跑不重複註冊" "1" "$n"
+
+echo "── 已裝的 repo 重跑要更新舊 matcher ──"
+D=$(newrepo); cd "$D"; mkdir -p .claude
+cat > .claude/settings.json <<'JSON'
+{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"python3 .claude/hooks/claude-md-hygiene-hook.py"}]}]}}
+JSON
+sh "$SKILL/scripts/install.sh" >/dev/null 2>&1
+m=$(python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['PostToolUse'][0]['matcher'])")
+ok "舊 matcher 被更新" "Write|Edit|Bash" "$m"
+n=$(python3 -c "import json;print(len(json.load(open('.claude/settings.json'))['hooks']['PostToolUse']))")
+ok "沒有變成兩筆" "1" "$n"
 
 echo "── 安裝器不得吃掉既有的 PostToolUse ──"
 D=$(newrepo); cd "$D"; mkdir -p .claude
