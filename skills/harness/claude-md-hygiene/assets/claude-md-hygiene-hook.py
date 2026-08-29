@@ -40,7 +40,7 @@ RE_BASH_WRITE = re.compile(
     # 這裡要貪婪：lazy 會停在第一個名字，而第一個常在 sed 樣式裡。
     # 左邊的 `\b` 不能省：`tee` 是 `guarantee`／`committee` 的字尾，`cp` 是 `tcp` 的。
     # 尾巴用 `\s` 不用 `\b`：`tee` 後面必須是引數，而 `\b` 在 `ls tee/` 的斜線前也成立。
-    r"|\b(?:g?sed\s+-i\S*|tee)\s[^;&|\n]*{N}"
+    r"|\b(?:g?sed\s+-i\S*|tee)\s[^;&|\n<]*{N}"
     # 右界不能只認段尾：`cp x "CLAUDE.md"`、`2>/dev/null`、尾隨註解、子 shell 都真的在寫。
     r"|\b(?:cp|mv)\s+[^;&|\n]*?{N}[\"']?\s*(?:$|[;&|\n#)]|\d?[<>])".format(N=_N)
 )
@@ -60,6 +60,7 @@ RE_PY_VERB = re.compile(
     # `awk -F'a'` 都會讓純讀取開火——那些比真正的寫入常見得多。
     r"|open\([^)]*[\"'][rbt+]*[wax][rbt+]*[\"']"
 )
+RE_PY_READ = re.compile(r"[\"']?\s*\)\s*\.\s*read")
 RE_NAME = re.compile(_N)
 
 MESSAGE = (
@@ -85,6 +86,9 @@ def _bash_target(command):
     """
     if not isinstance(command, str):
         return None
+    # 反斜線續行在 shell 是同一個指令段，但 `\n` 是分隔符——不先正規化的話
+    # `sed -i '' \⏎ 's/a/b/' CLAUDE.md` 這種常見寫法整條漏抓。
+    command = re.sub(r"\\\n\s*", " ", command)
     # 剝掉行內註解：`# 同步 AGENTS.md` 這種尾巴會讓取名取到沒被寫的那個。
     # 引號裡的 `#` 也會被剝掉——刻意的近似，分詞的成本大於它換到的準確度。
     command = re.sub(r"\s#[^\n]*", "", command)
@@ -92,8 +96,14 @@ def _bash_target(command):
     if m:
         hits = RE_NAME.findall(m.group(0))
         return hits[-1] if hits else None
-    if RE_PY_TARGET.search(command) and RE_PY_VERB.search(command):
-        hits = RE_NAME.findall(command)
+    # **取名要在 target 的 match 上，不能在整包指令上**：後者會把
+    # `&& git add CLAUDE.md AGENTS.md` 的引數也算進來，報一個沒被寫的檔。
+    # 動詞是在整包指令上搜的（跨行的 `p = Path(x)` … `p.write_text()` 只能這樣接），
+    # 代價是「讀常駐檔 + 寫別的檔」會誤報。所以再看一眼：target 自己那次呼叫如果
+    # 緊接著 `.read…`，那它就是被讀的那個，別人的寫入動詞不算在它頭上。
+    t = RE_PY_TARGET.search(command)
+    if t and RE_PY_VERB.search(command) and not RE_PY_READ.match(command, t.end()):
+        hits = RE_NAME.findall(t.group(0))
         return hits[-1] if hits else None
     return None
 

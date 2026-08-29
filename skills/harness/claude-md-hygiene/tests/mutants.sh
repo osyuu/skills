@@ -101,9 +101,13 @@ mut "檔名右界退回 word-boundary" "$H" "s.replace(r'(?:{n})(?![\\w.])', r'(
 mut "重導向不吃路徑"           "$H" 's.replace("(?:[^"+chr(92)+"s"+chr(92)+chr(34)+chr(39)+";&|"+chr(92)+"n]*/)?", "")'
 mut "分隔符不含換行"           "$H" "s.replace('[^;&|\\\\n]', '[^;&|]')"
 mut "取名取第一個而非最後一個"   "$H" "s.replace('return hits[-1] if hits else None', 'return hits[0] if hits else None')"
-mut "sed/tee 改回 lazy"        "$H" 's.replace("|tee)"+chr(92)+"s[^;&|"+chr(92)+"n]*{N}", "|tee)"+chr(92)+"s[^;&|"+chr(92)+"n]*?{N}")'
-mut "python 不要求寫入動詞"     "$H" "s.replace('RE_PY_TARGET.search(command) and RE_PY_VERB.search(command)', 'RE_PY_TARGET.search(command)')"
+mut "sed/tee 改回 lazy"        "$H" 's.replace("|tee)"+chr(92)+"s[^;&|"+chr(92)+"n<]*{N}", "|tee)"+chr(92)+"s[^;&|"+chr(92)+"n<]*?{N}")'
+mut "python 不要求寫入動詞"     "$H" 's.replace("if t and RE_PY_VERB.search(command) and not", "if t and not")'
 mut "python 不認 f-string"     "$H" "s.replace(r'\\(\\s*f?', r'\\(\\s*')"
+mut "不正規化反斜線續行"        "$H" 's.replace("    command = re.sub(r", "    _skip = (r", 1)'
+mut "tee 貪婪跨過 here-doc"     "$H" 's.replace("[^;&|" + chr(92) + "n<]*{N}", "[^;&|" + chr(92) + "n]*{N}")'
+mut "python 取名用整包指令"     "$H" 's.replace("RE_NAME.findall(t.group(0))", "RE_NAME.findall(command)")'
+mut "不看 target 是不是被讀的"  "$H" 's.replace("and not RE_PY_READ.match(command, t.end())", "")'
 mut "不剝行內註解"             "$H" 's.replace("command = re.sub(r" + chr(34) + chr(92) + "s#[^" + chr(92) + "n]*" + chr(34) + ", " + chr(34)*2 + ", command)", "pass")'
 mut "檔名沒有左界"             "$H" 's.replace("(?<![" + chr(92) + "w.])(?:{n})", "(?:{n})")'
 mut "tee/cp 沒有左字界"        "$H" 's.replace(chr(92)+"b(?:g?sed", "(?:g?sed").replace(chr(92)+"b(?:cp|mv)", "(?:cp|mv)")'

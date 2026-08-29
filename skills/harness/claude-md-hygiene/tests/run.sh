@@ -201,6 +201,23 @@ cat CLAUDE.md')"
 fresh; quiet "tee 後換行提到" "$(bash_fire r4 'tee /tmp/x.md
 grep CLAUDE.md')"
 
+echo "── mode 要綁在 open 的引數裡（跨行時看不到 .read 也不得靠字串常數開火）──"
+fresh; quiet "跨行的純讀 + 字串常數 a" "$(bash_fire e1 'p = pathlib.Path("CLAUDE.md")
+print(p.read_text().count("a"))')"
+
+echo "── 反斜線續行是同一段，不是兩段 ──"
+fresh; eq "sed 續行" "CLAUDE.md" "$(bash_name d1 "sed -i '' \\
+  's/a/b/' CLAUDE.md")"
+fresh; eq "cp 續行"  "CLAUDE.md" "$(bash_name d2 'cp new.md \\
+  CLAUDE.md')"
+
+echo "── 取名不得跨過 here-doc／here-string，也不得跨出 python 的 target ──"
+fresh; eq "tee 後接 here-string" "CLAUDE.md" "$(bash_name d3 'tee CLAUDE.md <<< "see AGENTS.md"')"
+fresh; eq "python 後接 git add"  "CLAUDE.md" "$(bash_name d4 'python3 -c "pathlib.Path('"'"'CLAUDE.md'"'"').write_text(s)" && git add AGENTS.md')"
+
+echo "── 讀常駐檔而寫別的檔不算 ──"
+fresh; quiet "讀一個寫另一個" "$(bash_fire d5 'python3 -c '"'"'x=open("CLAUDE.md").read(); open("out.md","w").write(x)'"'"'')"
+
 echo "── 尾隨註解不得把取名帶偏 ──"
 fresh; eq "sed + 尾隨註解" "CLAUDE.md" "$(bash_name c7 "sed -i '' s/a/b/ CLAUDE.md  # 同步 AGENTS.md")"
 fresh; eq "cp + 尾隨註解"  "CLAUDE.md" "$(bash_name c8 'cp new.md CLAUDE.md  # 覆蓋 AGENTS.md')"
