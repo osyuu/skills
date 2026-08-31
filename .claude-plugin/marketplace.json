@@ -19,6 +19,15 @@
       ]
     },
     {
+      "name": "xcode-ios-pitfalls",
+      "description": "Xcode/iOS build and signing traps that pass compilation, signing and unit tests, then fail at install time or silently at runtime: hand-written Info.plist missing CFBundle* keys, CODE_SIGNING_ALLOWED=NO stripping entitlements, macOS CLI rejected by TCC.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/engineering/xcode-ios-pitfalls"
+      ]
+    },
+    {
       "name": "release-assets",
       "description": "Ship the non-code deliverables cleanly: release notes, store screenshots, changelog, version bump. Inventory first, understand what you replace, review as the audience, leave no residue.",
       "source": "./",
