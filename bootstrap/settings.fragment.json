@@ -1,0 +1,29 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeGitInstructions": false,
+  "model": "opus[1m]",
+  "skillOverrides": {
+    "agents-sdk": "name-only",
+    "cloudflare": "name-only",
+    "cloudflare-email-service": "name-only",
+    "cloudflare-one": "name-only",
+    "cloudflare-one-migrations": "name-only",
+    "durable-objects": "name-only",
+    "sandbox-sdk": "name-only",
+    "turnstile-spin": "name-only",
+    "workers-best-practices": "name-only",
+    "wrangler": "name-only"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh"
+  },
+  "theme": "dark",
+  "teammateMode": "auto"
+}
