@@ -5,7 +5,7 @@ git clone https://github.com/osyuu/skills <任意路徑>   # 路徑自己挑，�
 sh <任意路徑>/bootstrap/install.sh                  # --dry-run 可先看
 ```
 
-裝四個 marketplace、九個 plugin，把全域規範與 statusline 接成 symlink，合併 settings。
+裝好 marketplace 與 plugin 清單，把全域規範與 statusline 接成 symlink，合併 settings。
 idempotent，可重跑。
 
 ## 為什麼是 symlink
