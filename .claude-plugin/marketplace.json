@@ -6,88 +6,16 @@
   },
   "metadata": {
     "description": "Osyuu's personal Claude Code skills",
-    "version": "1.17.0"
+    "version": "2.1.0"
   },
   "plugins": [
-    {
-      "name": "design-doc",
-      "description": "Turn a requirement into a verifiable, implementation-ready detailed design document (SDD). Interrogates ambiguity first, then produces a design contract.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/design-doc"
-      ]
-    },
-    {
-      "name": "skill-authoring",
-      "description": "House conventions and template for writing, improving, and reviewing Claude Code skills, plus this marketplace's registration flow (marketplace.json entry, version bump, local dedup).",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/skill-authoring"
-      ]
-    },
     {
       "name": "flutter-dart-code-review",
       "description": "Library-agnostic Flutter/Dart code review checklist: widget best practices, state management, Dart idioms, performance, accessibility, security, clean architecture.",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/review/flutter-dart-code-review"
-      ]
-    },
-    {
-      "name": "claude-md-hygiene",
-      "description": "Audit or rewrite the agent-facing norm files loaded every session (CLAUDE.md / AGENTS.md) so they carry invariants and landmines only — status, todos and contract detail move to living docs, leaving a pointer. Registers a PostToolUse hook so the next edit to those files gets the same judgment applied, and the file does not rot a second time.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/claude-md-hygiene"
-      ]
-    },
-    {
-      "name": "sdd-harness-init",
-      "description": "Scaffold the decision-log drift-guard SDD harness into a repo — create docs/design/DECISIONS.md, install a warn-only pre-commit that lists un-written-back decisions, wire git core.hooksPath, and inject a CLAUDE.md pointer section. Idempotent; the portable mechanism is contract-agnostic (writeback targets stay per-project).",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/sdd-harness-init"
-      ]
-    },
-    {
-      "name": "claim-check",
-      "description": "Install a Stop hook that checks the agent's own claims against the tool calls it actually made — whether something is really running, whether \"tests green\" predates the last edit, whether a conclusion drawn under challenge was preceded by actually opening the file in question.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/claim-check"
-      ]
-    },
-    {
-      "name": "handoff",
-      "description": "Before compacting or starting a fresh session, capture what the next session cannot look up — pending decisions, rejected paths and why, measured numbers, and what was claimed but never verified — and mechanically inventory the working tree and anything still running.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/handoff"
-      ]
-    },
-    {
-      "name": "arch-guard",
-      "description": "Lock a layered architecture's dependency direction into a repo with a warn-only pre-commit — declare the layer order in a config, then git grep flags upward imports, feature→feature deps, and cross-layer violations (--strict for CI). Language/package-agnostic; complements sdd-harness-init on the same hook.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/arch-guard"
-      ]
-    },
-    {
-      "name": "teammate",
-      "description": "多 agent(teammate)協作的房規與派工令樣板:開幾個由視角決定、派工令必備七條、報告收不到的處理、stop 的前提、review 期間的 baseline 紀律、規格中途變更的重派流程。",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/teammate"
+        "./skills/engineering/flutter-dart-code-review"
       ]
     },
     {
@@ -96,52 +24,7 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/workflow/release-assets"
-      ]
-    },
-    {
-      "name": "comment-budget",
-      "description": "Warn-only pre-commit guard on comment volume: over-long blocks, per-file comment ratio, and narrative/verification-process wording. Comments should say what the code cannot; history goes to git log, verification goes to the commit message.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/comment-budget"
-      ]
-    },
-    {
-      "name": "harness-audit",
-      "description": "Audit which guard-rail harnesses a repo should have, which are installed, and which are missing — then prove each one actually fires by injecting a violation.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/harness-audit"
-      ]
-    },
-    {
-      "name": "repo-onboard",
-      "description": "Bring a repo to the state where agents can work on it reliably: detect its stack and conventions, ask only what a human can answer, write per-repo config, then install guards and inject faults to prove each one fires on this stack.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/harness/repo-onboard"
-      ]
-    },
-    {
-      "name": "greenfield-flow",
-      "description": "Ordering and entry conditions for a 0→1 project: when to converge the requirement, when to lay the foundation, when NOT to install guards yet, and when review and shipping are due.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/greenfield-flow"
-      ]
-    },
-    {
-      "name": "dev-loop",
-      "description": "The relay from requirement to delivery: who holds each leg, what condition ends it, and which executor the implementation warrants. Carries the completion criteria the other skills assume but never state.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/workflow/dev-loop"
+        "./skills/engineering/release-assets"
       ]
     }
   ]

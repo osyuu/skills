@@ -1,12 +1,24 @@
 ---
 name: flutter-dart-code-review
-description: Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, testing, i18n, navigation, DI, and clean architecture. Use this whenever reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when the user asks to check code quality, find anti-patterns or smells, or vet code before merging, even if they don't literally say "review" (審查 / code review / 檢查 Flutter 程式碼 / 這段 Dart 有沒有問題). Skip it for pure backend/CLI Dart with no Flutter surface, and for writing new code rather than reviewing existing code.
+description: Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, testing, i18n, navigation, DI, and clean architecture. Use this whenever reviewing, auditing, or critiquing Flutter/Dart code — a PR, a widget, a feature branch, or a whole app — or when the user asks to check code quality, find anti-patterns or smells, or vet code before merging, even if they don't literally say "review" (審查 / code review / 檢查 Flutter 程式碼 / 這段 Dart 有沒有問題). Skip it for pure backend/CLI Dart with no Flutter surface, and for writing new code rather than reviewing existing code. It supplements mattpocock-skills:code-review's Standards axis rather than replacing its two-axis review — run that one first.
   也認 review this Dart / Flutter コードレビュー。
 ---
 
 # Flutter/Dart Code Review Best Practices
 
 Comprehensive, library-agnostic checklist for reviewing Flutter/Dart applications. These principles apply regardless of which state management solution, routing library, or DI framework is used.
+
+## 這支不取代兩軸 review
+
+**它是 `mattpocock-skills:code-review` 的 Standards 軸補充，不是替代品。** 那支釘固定點、
+跑 Standards 與 Spec **兩軸**並行；本檔只補 Standards 那半缺的語言特定條目（它的 baseline
+是 12 條 Fowler smell，零 Flutter/Dart 條目）。
+
+順序：**先跑 `mattpocock-skills:code-review`**（釘住比較基準、跑 Spec 軸：spec 要的少了什麼、
+diff 多做了什麼、看起來做了但做錯的），**再用本檔逐條過 Flutter/Dart**。
+
+只跑本檔的後果是 **Spec 軸整個消失**，而一份長而詳盡的 checklist 報告看起來就像一次徹底的
+review——失效沒有任何跡象。
 
 ## When to use / Skip
 
@@ -27,10 +39,8 @@ Don't walk sections 1→15 linearly. Lead with the categories that cause crashes
 
 Severity is contextual — a hardcoded color is LOW in a prototype, HIGH in a themed design system. Use judgment; the table is the default lead order, not a rigid rank.
 
-Section numbers are stable so the references above keep working, which is why the file no
-longer runs 1→15: the two CRITICAL sections that used to sit near the end are now directly
-below this table. Attention thins toward the end of a long file, and those are the two that
-ship incidents.
+Section numbers are stable, so the file does not run 1→15: the two CRITICAL sections sit
+directly below this table where attention is highest.
 
 ---
 
