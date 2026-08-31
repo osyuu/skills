@@ -1,34 +1,37 @@
 # skills
 
-Osyuu 的個人 Claude Code skill marketplace。撰寫與登錄的房規見 `skills/workflow/skill-authoring/SKILL.md`。
+Osyuu 的個人 Claude Code skill marketplace。這裡只放 `mattpocock-skills` 沒有、
+或有但需要按自己專案改的東西；方法論一律用 mattpocock 那套，不複製一份。
 
-skill 依用途分成 `skills/harness/`(裝守門)、`skills/workflow/`(做事順序)、
-`skills/review/`(審 code),各目錄的 `README.md` 寫了判準。否決過的路存在 `.out-of-scope/`。
+## Bucket
 
-## 守門（`hooks/pre-commit`，全部 warn-only）
+`skills/engineering/` 是 promoted，`skills/deprecated/` 不是。
+**promoted 的每一支都要在 `.claude-plugin/marketplace.json` 的 `plugins[]` 有一筆，
+其餘 bucket 的不得出現在裡面**；每個 bucket 的 `README.md` 列出它底下的每一支。
+否決過的路存在 `.out-of-scope/`，一則寫清楚為什麼不做、誰要求過。
 
-| 檢查 | 守什麼 |
-|---|---|
-| comment-budget | 註解區塊 ≥10 行 · 單檔佔比 >40% · 敘事與驗證過程字眼 |
-| skill-tests | 改了某 skill 的 `scripts/` `assets/` `tests/` 就跑它 `tests/` 下的每一支腳本，再跑 `mutants.sh` |
-| marketplace-sync | 新增 `skills/<category>/<name>/` 但 `marketplace.json` 沒登錄 |
-| sync-check | `.claude/hooks/` 與 `hooks/` 的部署副本跟 skill `assets/` 的來源不一致 |
-| hooks-self-test | 動到 `hooks/` 或 `.claude/hooks/` 就跑 `hooks/tests.sh` 與 `hooks/mutants.sh`（守門自己的回歸測試＋突變） |
+## 新機器
 
-**fresh clone / 新 worktree 要先跑 `git config core.hooksPath hooks`** —— 此設定不進版控，沒設就是全部靜默失效，而那看起來跟有守門一模一樣。
+`bootstrap/` 是全域環境的單一真相：marketplace、plugin 清單、`~/.claude/CLAUDE.md`、
+statusline、settings 片段。新機器 clone 後跑 `sh bootstrap/install.sh`。
+**`~/.claude/CLAUDE.md` 是指回 `bootstrap/CLAUDE.md` 的 symlink**——改它就是改這個 repo，
+要 commit 才會傳到別台。細節見 `bootstrap/README.md`。
 
-**守門自己也要有守門**：`hooks/` 底下的東西不在 skill-tests 的範圍內，改壞了不會有任何人發現（包括它自己）——所以有 `hooks/tests.sh`，而動到 `hooks/` 就會跑它。
+## 寫 skill
 
-常駐規範檔的複查走 `.claude/settings.json` 的 PostToolUse hook，不在這張表裡——它在**編輯當下**開火，不等到 commit。
+判準走 `mattpocock-skills:writing-for-agents`，那份是單一真相——包括 invocation 二分法：
+只有模型需要自己伸手拿的才留 `description`，其餘設 `disable-model-invocation: true`
+換掉常駐的清單預算。
 
-不裝 arch-guard（沒有分層可守）與 sdd-harness-init（沒有設計書）。**裝一道不會開火的守門比不裝更糟**：它讓人以為那條規則有人在看。
+**SKILL.md 適用跟 code 註解同一套規範**：寫約束與違反的後果，不寫驗證過程、不寫歷史、
+不寫推導過程。「實測踩過…」那類句子證明的是作者很認真，不是這支 skill 怎麼運作——
+它們屬於 commit message 與 `.out-of-scope/`。
 
-## 踩坑
+這個 repo 不裝機械守門，沒有 pre-commit。把關靠 review。
 
-- **改動只對新 session 生效。** skill 全文是在被叫用的那一刻抓進對話的，之後不會換——一個開很久的 session 會一路照當初那份工作，而兩邊都沒有任何訊號。改完想立刻用就開新 session，或在原 session 重新叫一次那個 skill。
-- **`install.sh` 一律 idempotent，不覆蓋既有檔案**（保留使用者調過的門檻）。所以改了 `assets/` 裡的 hook 腳本之後，要手動 `cp` 到目的地，否則改的是原始碼、跑的是舊版。
-- **從未叫用過的 skill，清單裡只有名字沒有描述。** 那不是 YAML 壞掉——`~/.claude.json` 的 `skillUsage` 分數為 0 就會被清單預算砍掉描述，而它正需要描述才會被自動觸發。**不限新裝的**：裝很久但一直沒被叫到的一樣是 0，而它看起來跟「這支 skill 沒用」完全一樣。
-- **`skillUsage` 的裸名與 plugin 限定名是兩筆不同的 key，清單只認後者。** 叫 `dev-loop` 加的是 `dev-loop`，清單看的是 `dev-loop:dev-loop`——**分數確實變 1、描述照樣不出現**，而你以為修好了。要補分數一律用 `<plugin>:<skill>`。**讀檔也不算叫用**（`sed` 讀得到內容，分數不動）。
-  盤點指令：`python3 -c "import json,io,os;u=json.load(io.open(os.path.expanduser('~/.claude.json'))).get('skillUsage',{});import glob;print([d.split('/')[-1] for d in glob.glob(os.path.expanduser('~/Tools/skills/skills/*/*')) if f\"{d.split('/')[-1]}:{d.split('/')[-1]}\" not in u])"`
-- **腳本的失敗模式幾乎都是靜默的**：壞掉的 pattern、少一個欄位、多一層跳脫，全都回「沒有發現」，跟真的沒問題長得一樣。所以有 `scripts/` 的 skill 一定要有 `tests/`，而且要跑過失敗路徑，不只成功路徑。
-- **假 fixture 的形狀未必等於真實環境的形狀。** 實測踩過：假 plugin cache 每個 plugin 目錄只放一個 skill，真實 cache 因為 `source: "./"` 每個目錄躺著整個 repo 的 skill，於是同一支腳本在測試裡乾淨、在真實環境產出三分之二的幻影。
+## 環境事實（查得到但很貴）
+
+- **改動只對新 session 生效**：skill 全文在被叫用的那一刻抓進對話，之後不會換。
+- **`/plugin update` 要手動跑**，追的是 git HEAD 不是 `metadata.version`。
+- **從未叫用過的 skill 在清單裡只有名字沒有描述**：`~/.claude.json` 的 `skillUsage`
+  分數為 0 會被清單預算砍掉描述。key 是限定名，裸名與讀檔都不算數。
