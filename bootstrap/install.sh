@@ -14,6 +14,19 @@ set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 DEST="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
 DRY=""
+
+# **這份清單只有一份。** 安裝段與驗證段各抄一份時兩邊會分頭漂，而漂掉的那支正好是
+# 「裝了但沒驗」或「驗了但沒裝」——兩種都不出聲。
+PLUGINS="mattpocock-skills@claude-plugins-official
+frontend-design@claude-plugins-official
+swift-lsp@claude-plugins-official
+flutter-dart-code-review@osyuu
+xcode-ios-pitfalls@osyuu
+release-assets@osyuu
+vgv-ai-flutter-plugin@very-good-claude-code-marketplace
+flutter-all@flutter-claude-code
+ui-ux-pro-max@ui-ux-pro-max-skill"
+
 [ "${1:-}" = "--dry-run" ] && DRY=1 && echo "== DRY RUN：只印不做 =="
 
 run() { if [ -n "${DRY}" ]; then echo "  \$ $*"; else "$@"; fi; }
@@ -44,14 +57,7 @@ done
 # claude-plugins-official 是內建 marketplace，不必先 add。
 echo
 echo "[2/5] plugin"
-for p in mattpocock-skills@claude-plugins-official \
-         frontend-design@claude-plugins-official \
-         swift-lsp@claude-plugins-official \
-         flutter-dart-code-review@osyuu \
-         release-assets@osyuu \
-         vgv-ai-flutter-plugin@very-good-claude-code-marketplace \
-         flutter-all@flutter-claude-code \
-         ui-ux-pro-max@ui-ux-pro-max-skill; do
+for p in ${PLUGINS}; do
     printf '  %s ... ' "${p}"
     if [ -n "${DRY}" ]; then echo "(dry)"; continue; fi
     if claude plugin install "${p}" >/dev/null 2>&1; then echo "OK"; else echo "失敗（第 5 段會查實際狀態）"; fi
@@ -186,14 +192,7 @@ else
     _list=$(claude plugin list 2>/dev/null || true)
     _missing=""
     _disabled=""
-    for p in mattpocock-skills@claude-plugins-official \
-             flutter-dart-code-review@osyuu \
-             release-assets@osyuu \
-             vgv-ai-flutter-plugin@very-good-claude-code-marketplace \
-             flutter-all@flutter-claude-code \
-             ui-ux-pro-max@ui-ux-pro-max-skill \
-             frontend-design@claude-plugins-official \
-             swift-lsp@claude-plugins-official; do
+    for p in ${PLUGINS}; do
         # **只比對名字不夠**：停用的 plugin 照樣列在 list 裡，只是 Status 變 disabled，
         # 於是「九個都在」會在九個全被停用時照樣印出來（實測確認）。
         # 取名字那行之後的區塊，看它是不是 enabled。
@@ -208,7 +207,7 @@ else
         esac
     done
     if [ -z "${_missing}" ] && [ -z "${_disabled}" ]; then
-        echo "  ✓ 八個 plugin 都在且已啟用"
+        echo "  ✓ $(printf '%s\n' ${PLUGINS} | wc -l | tr -d ' ') 個 plugin 都在且已啟用"
     fi
     if [ -n "${_missing}" ]; then
         echo "  ✗ 缺（沒裝上）："

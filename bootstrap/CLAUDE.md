@@ -3,15 +3,18 @@
 此檔適用於所有專案。專案特定的架構、慣例請寫在各專案的 `./CLAUDE.md`。
 
 ## 關於我
-- Flutter 工程師，主力 stack：Flutter、Dart、Xcode (iOS)、Android。
-- **（僅限有 fvm 的 Flutter/Dart 專案）** Flutter SDK 透過 **fvm** 管理：預設用 `fvm flutter` / `fvm dart`，別假設裸 `flutter`/`dart` 指令存在。判斷依據是 repo 根有沒有 `.fvmrc` / `.fvm/`——**沒有就照該專案自己的慣例，別硬加 `fvm` 前綴**。
-- 程式碼風格遵循 `very_good_analysis` lint。
-- **Python 一律走 uv**：跑腳本 `uv run`、裝套件 `uv add`（或 `uv pip`）、鎖版本 `uv lock`——**不要 `pip install`、不要手動建 venv、不要動系統 Python**。單檔腳本需要第三方套件時，用 PEP 723 inline metadata 寫在檔頭再 `uv run script.py`。只用標準庫的一次性片段（`python3 - <<'EOF'`）不在此限。
+- **Flutter 與 iOS 兩邊都是主力**：Flutter / Dart、Swift / SwiftUI、Xcode (iOS)、Android。
+
+## 工具鏈（**本檔唯一的語言特定區**，其餘各節一律跨語言）
+- **Dart / Flutter**：repo 根有 `.fvmrc` / `.fvm/` 就走 **fvm**（`fvm flutter` / `fvm dart`），別假設裸指令存在；**沒有那兩個檔就照該專案的慣例，別硬加 `fvm` 前綴**。lint 是 `very_good_analysis`。
+- **Python**：一律走 **uv**（`uv run` / `uv add` / `uv lock`）——**不要 `pip install`、不要手動建 venv、不要動系統 Python**。單檔腳本要第三方套件時用 PEP 723 inline metadata 寫在檔頭再 `uv run`。只用標準庫的一次性片段（`python3 - <<'EOF'`）不在此限。
+- **Swift / iOS**：建置與簽名的坑在 `xcode-ios-pitfalls` skill，不在這裡。**新增語言照這個方向走**——一行指標進本節，內容進 skill 或該專案的 `./CLAUDE.md`。
 
 ## 溝通
 - 用**繁體中文**回覆；程式碼、識別字、commit message、技術術語維持英文。
 - 直接講重點，不要客套鋪陳。先給結論，需要時再展開。
 - 不確定就說不確定，不要硬掰或用猜測填補。
+- **skill 的內容用英文寫**（`SKILL.md` 與它的 reference 檔）——模型的主場語言，也是這些 skill 上游生態的語言；`description` 裡的中文觸發詞是例外，那是給你打的。
 
 ## 誠實回報（IMPORTANT）
 - **YOU MUST** 如實回報：測試/編譯失敗就說失敗，並附上實際輸出。不要粉飾、不要說「應該沒問題」。
@@ -33,14 +36,7 @@
   而他補出來的正是我省略掉的那句。
 
 ## 驗證紀律（IMPORTANT）
-- **YOU MUST** 在改完檔案後跑該專案的 analyze / lint / 相關測試，全綠才回報完成。確切指令以專案的 `./CLAUDE.md` 為準；Flutter 專案預設用 fvm（如 `fvm dart analyze`、`fvm flutter test`）。
-- 寫入成功 ≠ 程式正確。檔案有寫進去不代表能編譯、沒有 type error。
-
-## 檔案與上下文紀律
-- 讀大檔案（超過約 500 行）時分段讀（offset + limit），別假設一次讀完；留意被截斷。
-- 搜尋結果若少得可疑，先懷疑是不是被截斷或範圍太窄，縮小條件重搜再下結論。
-- **長對話中，編輯檔案前先重新讀取目標段落**，不要單憑稍早的記憶；上下文可能已被壓縮。
-- 大型重構前，先用獨立 commit 清掉 dead code / unused import，再開始真正改動。
+- **YOU MUST** 在改完檔案後跑該專案的 analyze / lint / 相關測試，全綠才回報完成。確切指令以專案的 `./CLAUDE.md` 為準。
 
 ## 常駐指南自檢（CLAUDE.md / AGENTS.md，含這一份）
 
@@ -74,7 +70,7 @@ git 與 code 都有，寫進記憶等於製造第二份會腐爛的真相，而�
 工作區（未 commit、未 push、殘留 worktree）用指令查，別憑印象講「都乾淨了」。
 
 ## 註解（IMPORTANT）
-- **專案自己有註解規範時以那份為準**（例如 `conventions/comments.md`）。這裡是沒有那份的專案適用的底線，別把兩邊都當權威——尤其門檻數字，一律以闸的實際設定為準，不要在規範檔裡複寫。
+- **專案自己有註解規範時以那份為準**（例如 `conventions/comments.md`）。這裡是沒有那份的專案適用的底線，別把兩邊都當權威——**門檻數字一律以實際在跑的那道檢查為準**（該專案的 hook 或 linter 設定），文件兩邊都只是它的複本。
 - **註解是寫給人讀的**，不是給 agent 的備忘錄。動筆前自問：「同事在 code review 看到這段，會覺得有用還是想跳過？」
 - 寫**約束**與**違反的後果**，一兩句講完；**不要寫推導過程**——量測數字、機率估算、比較過的方案、被推翻的假設，全部不進註解。
 - 那些東西有自己的家：設計書 / decision log / commit message / git history。**同一套論證存兩份會各自走樣**，而註解是最容易過期又最沒人維護的那一份。要交代來由就指過去（「依據見 §11」），不要複製一份。
@@ -121,6 +117,8 @@ agent 一定會踩的：
 - **`flutter-dart-code-review`**：`code-review` 的 Standards 軸只有 Fowler smell，
   沒有語言特定條目。**兩者疊加，不是二選一**——先跑 `code-review` 釘固定點並跑 Spec 軸，
   再用它逐條過 Flutter/Dart。
+- **`xcode-ios-pitfalls`**：`code-review` 讀的是 diff，讀不到 build setting 與 plist 的
+  交互作用——簽名與打包壞掉時，它一條 finding 都不會產生。
 - **`release-assets`**：main flow 到 `code-review` 就結束，**沒有出貨那一段**。
   release notes 與商店素材沒有編譯器、測試、review 任何一層網子接著。
 
@@ -162,6 +160,7 @@ agent 絕不站到人那一側。
 - commit message 用英文、簡潔描述「為什麼」。
 - 遵循 **Conventional Commits**：`<type>(<scope>): <subject>`。`type` 用 `feat | fix | refactor | test | docs | chore | ci | perf | build`；`scope` 選用，依改動區域而定（可省）。subject 用祈使句。
 - 破壞性變更**一律在 body 寫 `BREAKING CHANGE:`**，不要用 `!` 簡寫。
+- 大型重構前，先用獨立 commit 清掉 dead code / unused import，再開始真正改動。
 - **開發中的 commit 是 checkpoint，不是交付單位。** push 前整理一次：squash 成邏輯單元、
   重寫 message。**只准做不改 tree 的事**——整理完 `git diff <整理前的 hash> HEAD` 必須是空的。
   **時機在 review 收完之後**：rebase 會改寫 hash，而 review 的範圍釘在 hash 上，先整理會讓
@@ -170,4 +169,3 @@ agent 絕不站到人那一側。
 ## 我踩過的坑
 <!-- 在這裡累積跨專案、會重複遇到的教訓，例如特定套件的雷、簽章設定等 -->
 - **權限分類器 vs spec 授權**：設計書裡寫「授權 push」不等於 harness 授權——auto mode 會擋「merge + 直推預設分支」，除非使用者在對話中明示。寫執行計畫時，git 操作粒度（merge 到 main、直推）要嘛事先取得明示，要嘛預設走 feature branch，合併留給使用者一句話。
-- **iOS 模擬器免帳號的正確做法是 ad-hoc 自動簽名，不是關掉簽名**：`CODE_SIGN_STYLE: Automatic` 不填 team，模擬器 build/test/run 全通。**`CODE_SIGNING_ALLOWED=NO` 是陷阱**——entitlements 於簽名時嵌入，關掉簽名會剝掉 App Group 等 entitlements，持久化「靜默」全滅（寫入不報錯、重開全消失），單元測試全綠也測不出來。驗證法：`xcrun simctl get_app_container booted <bundle-id> groups` 必須列出容器。`*.xcodeproj` gitignore、`project.yml` 進版控。
