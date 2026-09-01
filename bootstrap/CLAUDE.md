@@ -151,7 +151,6 @@ agent 絕不站到人那一側。
 | 難以逆轉 ∧ 沒 context 會意外 ∧ 真的有取捨 | 開一則 ADR（`docs/adr/NNNN-slug.md`），翻案時舊那則加 `Status: superseded by ADR-NNNN` |
 | 詞彙變了、某個詞被用成兩個意思 | 當場改 `CONTEXT.md`——**不要批次處理** |
 | 大到一個 session 裝不下的工程 | `/mattpocock-skills:wayfinder` 的 decision ticket，HITL/AFK 分型本身就是歸屬 |
-| 否決掉的路 | `.out-of-scope/` 一則，含「誰在什麼時候提過」 |
 | 都不夠格 | 那本來就不值得記 |
 
 ## Git
