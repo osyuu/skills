@@ -1,74 +1,69 @@
 ---
 name: release-assets
-description: >-
-  把「使用者會看到的非程式碼交付物」做完並交出去——release notes / 更新說明、商店截圖、
-  changelog、App Store 或 Play 的商店素材、版本號。當使用者說「要發版了 / 準備上架 / 送審 /
-  release / ship it / publish / 寫更新說明 / release notes / what's new / 更新履歴 /
-  截圖要重拍 / screenshots / store listing / app store metadata / 商店素材 /
-  這次新增了什麼功能要寫進更新」,或在動 CHANGELOG、release_notes/、fastlane metadata、
-  截圖 config 時,主動使用。純程式碼的變更、PR 描述、內部設計文件(用 design-doc)、
-  以及沒有使用者可見產出的純版號變更,都不要用。
-  也認 cut a release / リリース準備。
+description: Ships an app release's user-facing, non-code deliverables (release notes, store screenshots, changelog, store metadata). Use when preparing an app release or store submission, writing release notes or what's-new text, re-shooting store screenshots, or editing fastlane metadata or screenshot config. 也認 發版 / 上架 / 寫更新說明 / 截圖要重拍 / リリース準備. Not for library or backend releases with no store listing, a bare version bump, or PR descriptions.
 ---
 
-# Release Assets — 把非程式碼交付物交乾淨
+# Release Assets
 
-程式碼有編譯器、測試、review 三層網子接著;**release notes 和截圖沒有任何一層**。它們錯了不會變紅,只會直接送到使用者面前。這份 skill 就是那層缺掉的網。
+Code has a compiler, tests and review behind it. Release notes and store screenshots have none:
+a mistake in them goes straight to users.
 
-四條規則,各對應一種只在交付之後才會被發現的失敗。
+## 1. Inventory, confirm, then touch
 
-## 1. 先盤點「完整交付長什麼樣」,再動手
+Before editing the first file, list the complete delivery: every file, every language, every
+device size and every variant (for example free and paid), with a done criterion for each.
+Languages often differ between deliverables: the app may ship in eight while the store text
+covers six. Say so when they do.
 
-動第一個檔案之前,把清單列完:哪些檔案、哪些語言、哪些裝置尺寸、順序、標記、以及**每一項的完成判準**。
+Present the list together with the decisions that belong to the user, and wait for an answer
+before you touch a file. These are the user's:
 
-不列的代價是來回:每一輪都是使用者發現一件你沒問的事(順序、New 標記、新舊風格一致性、殘留檔)。這些攤在同一張清單上是一次簡報的事,一項一項冒出來就是十輪。
+- the order of anything users see in sequence;
+- markers such as a NEW badge: which items get one, and which lose theirs;
+- any copy users will read, including screenshot captions and each release-note line: show
+  your draft of it;
+- whether existing assets get redone to match the new ones.
 
-**盤點時特別容易漏的**:
-- 語言數量在不同產物可能不同(app 內字串 8 語言,但商店更新說明只收 6 語言,這種落差不會有人提醒你)。
-- 同一份內容的**分版本差異**(免費版 / 付費版各有一份,且付費版多一段)。
-- 資產的**排列順序**由什麼決定——常常是檔名而不是設定檔,改名等於改順序。
+Doing the work first and asking afterwards turns every answer the user gives into rework.
 
-**列完先攤給使用者確認,再動第一個檔案。** 順序、標記、要不要重做舊素材,這些不是實作者
-能自己拍板的;列出來卻不確認,等於把來回從「一次簡報」拖成「每做一步被否定一次」。
+## 2. Know why an existing asset looks the way it does
 
-**順序的預設**:使用者可見的序列,**第一個位置留給這次最大的變化**——release notes 第一條、
-截圖第一張、changelog 最上面一節。舊內容往後排,並把上一版的「New」之類標記拿掉;
-留著的話年年都在「新功能」,標記就失去意義了。
+Before you rename, delete or migrate an existing asset, find where its shape came from. Start
+with `git log` on it. Assets are usually generated, and output directories are often gitignored,
+so if the history isn't here, follow the tool, script or config that produced it, even into
+another repository. An element you can't explain is an open question, not noise: put it to the
+user before you change it. A word in a filename may be what the generator keys on. The tool
+itself may have changed engines while its config stayed on the old schema, so confirm it still
+runs before you rely on it.
 
-## 2. 取代既有素材前,先讀懂它為什麼長那樣
+## 3. Write as the reader, not the author
 
-要改名、刪除、遷移任何既有資產之前,先弄清楚它現在的形狀是哪來的——先 `git log` 那個檔案,**查不到就往上追到產生它的工具／腳本／設定所在的 repo**。資產多半是輸出,而輸出目錄常被 gitignore;在那裡查無歷史不代表沒有來歷,只代表你找錯地方了。
+Release notes answer "what do I get?". The changelog answers "what happened?", and technical
+detail belongs there. Before you show the user any release-note or store text, read it as a
+stranger to the product:
 
-**你講不出來歷的元素,就是未解問題,不是雜訊。** 失效形狀:檔名裡看似冗餘的字是**機制**——`06_new_key_change.png` 的 `new` 是舊工具用來產生 NEW 標章的前綴,改名時順手刪掉等於刪掉一個規格,而答案在產生它的那個 repo 的 `git log` 裡。
+- **Would it scare them?** Describing a defect they never noticed advertises a bug.
+- **Does it knock the previous version?** Users don't need to hear that the old design was bad.
+  State the new state.
+- **Is there a word only the team uses?** Pipeline, state, rebuild and per-frame are the team's
+  words, not the user's.
 
-同一條也適用於工具本身:**工具可能換過引擎,設定檔卻還停在舊 schema**。動任何既有 config 前先確認它現在還跑得起來,而不是假設它一直有效。
+Several internal fixes become one line that users can feel.
 
-## 3. 用讀者的身分再審一次,而不是用作者的身分對規格
+```
+Bad:  Fixed a bug where a failed import could corrupt the project you had open.
+Bad:  Export is no longer buried three menus deep.
+Good: More reliable importing.
+Good: Export is now on the share sheet.
+```
 
-程式碼 review 問「符不符合規格」。使用者可見的產出要問的是另一組問題:
+The first Bad line tells users their data was at risk. The second tells them the old app was
+badly designed. Neither tells them what they get.
 
-- 陌生人看得懂嗎?有沒有只有開發者懂的詞(「管線」「每一幀重建」「state object」)?
-- 會不會**嚇到人**?描述一個他們從沒察覺的缺陷,等於替自己打廣告說有 bug。
-- 有沒有在**數落自己上一版**?(「不再埋在設定裡」)使用者不需要知道舊設計很糟,只需要知道新的好用。
-- 一整套資產放在一起看,**風格一致嗎**?(新舊截圖的導覽列不同、時間戳不同、標記樣式不同。)
+## Done when
 
-**CHANGELOG 和 release notes 是兩種文體,不要互相污染**:CHANGELOG 回答「發生了什麼」,給開發者,技術細節寫這裡;release notes 回答「我多了什麼」,給使用者。一堆內部修正在 release notes 裡合併成一句使用者感受得到的話就夠了。
-
-## 4. 交付前清殘留
-
-完成的定義包含工作區,不只是產出檔案本身:
-
-- **產生器通常只寫不刪**。改過檔名之後,舊產物會留在輸出目錄裡等著被誤上傳——重排過就把輸出整個清掉重跑。
-- **為了截圖而動的環境設定要還原**(狀態列 override、假資料、多開的模擬器/裝置)。
-- 臨時分支、暫存檔、為了對照留下的候選檔。
-
-交付時順帶明講「哪些沒做、為什麼」——半套資產留在輸出目錄裡不講,遲早被當成可用的。
-
-## 產出後的自問
-
-- 清單每一項都回去對過了嗎?**視覺資產要真的打開看**,不是看檔名對就算數——
-  「第六張漏了標記」這種缺漏,只有打開圖才看得到。
-- 清單是先列的,還是邊做邊補的?(邊補 = 準備好來回很多輪)
-- 我刪掉或改名的東西,每一個我都講得出來歷嗎?
-- 這段文案如果我是第一次看到這個產品的陌生人,看得懂、且不會被嚇到嗎?
-- 輸出目錄裡有沒有這次不該存在的檔案?環境有沒有還原?
+- every item on the confirmed inventory is checked against its criterion, and visual assets were
+  opened and looked at, not judged by filename;
+- anything changed only for the capture (status bar overrides, demo data, extra simulators) is
+  back as it was;
+- the report says what was left undone and why.
