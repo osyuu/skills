@@ -1,62 +1,57 @@
 ---
 name: xcode-ios-pitfalls
-description: Xcode / iOS silent failures: BUILD SUCCEEDED and green tests, then the install fails, an entitlement quietly does nothing, or a CLI is refused by TCC. Use when touching project.yml, Info.plist, entitlements, App Groups, code signing, or simulator-vs-device builds — and when a build will not install, or persistence vanishes on relaunch. 也認 裝不上實機 / entitlement 沒作用.
+description: Xcode silent failures, where the toolchain reports success and the failure lands later. Use when running xcodebuild or simctl; when editing entitlements, signing or the bundle ID; or when a green build or test misbehaves at runtime. 也認 entitlement 沒作用. Not for server-side Swift.
 ---
 
-# Xcode / iOS Build and Signing Traps
+# Xcode Silent Failures
 
-Three traps share one shape: **silent failure**. Nothing is said at compile time or in the test
-run; the failure lands at install time, or at runtime somewhere that prints no error.
+Every trap here is a **silent failure**: `BUILD SUCCEEDED`, green tests, or a clean install, and the
+failure lands later, somewhere that prints nothing, or with an error that points somewhere else.
+A plausible first hypothesis is the usual way to miss one. Before you settle on a cause, check
+every entry below whose symptom matches.
 
-**Walk all three before concluding.** Their symptoms are indistinguishable until read — each
-one looks like "the build succeeded but something is wrong".
+When asked to check a project for these traps, apply each entry to the project you were given.
+Report the ones that apply, each with the file and line, or the command, that shows it.
+"None apply" is a valid report. Don't fix anything unless asked.
 
-## 1. A hand-written Info.plist missing `CFBundleIdentifier`
+## Signing and identity
 
-Once `GENERATE_INFOPLIST_FILE: NO` is set, Xcode stops synthesising every `CFBundle*` key —
-**you now own all of them**. With `CFBundleIdentifier` missing, compilation succeeds, signing
-succeeds, `xcodebuild` returns `BUILD SUCCEEDED`, and **the install is what fails**:
+To build and test on the simulator without an account, keep signing on: `CODE_SIGN_STYLE:
+Automatic` with `DEVELOPMENT_TEAM` empty (ad-hoc signing). A team is needed only for a real
+device.
 
-```
-CoreDeviceError 3000: ... not a valid bundle
-```
+**Never `CODE_SIGNING_ALLOWED=NO`**, even on a command that only compiles: build commands get
+reused to test and run. It is the reflexive way through, and **entitlements are embedded at
+signing time**: turning signing off strips App Groups, Keychain sharing and background modes.
+Writes raise nothing, the data is gone on relaunch, and unit tests stay green because they never
+reach the container.
 
-The message names the bundle, not the key that is missing.
-
-Keep the generated `*.xcodeproj` out of version control and commit the XcodeGen `project.yml`
-instead. A checked-in project file plus a generator writing the same targets means the next
-regeneration silently discards whichever edits were made in Xcode.
-
-## 2. Simulator builds without an account: ad-hoc automatic signing
-
-Set `CODE_SIGN_STYLE: Automatic` and leave `DEVELOPMENT_TEAM` empty — simulator build, test and
-run all work. A team is only needed to go to a real device.
-
-**Never reach for `CODE_SIGNING_ALLOWED=NO`.** What it turns off is signing, and **entitlements
-are embedded at signing time** — App Groups, Keychain sharing and background modes are stripped
-with it. What follows is silent: **writes raise nothing, the data is gone on relaunch, and unit
-tests stay green** (they cover pure logic and never reach the container).
-
-In a project with App Groups, this has to list a container:
+In a project with App Groups, this must list a container. If it lists nothing, the build was
+signed without its entitlements:
 
 ```sh
 xcrun simctl get_app_container booted <bundle-id> groups
 ```
 
-## 3. macOS CLI using a protected framework: embed the plist in the executable
+**The bundle ID is the app's identity.** Changing it cuts the app off from the permissions it was
+granted, its App Group container and its keychain items. To tell two builds apart on the home
+screen, change `CFBundleDisplayName` only.
 
-CoreBluetooth, camera, microphone and location all need a usage description, and usage
-descriptions live in Info.plist — **a command-line executable has no bundle, so it has no
-plist**. TCC does not prompt; it refuses.
+## Build caches
 
-Embed the plist into the executable itself, with the linker:
+- **UI tests fail with `Lost connection to the application`, and no new `.ips` crash report
+  appears** in `~/Library/Logs/DiagnosticReports`. The missing report points away from an app
+  crash; the usual cause is stale DerivedData. Give each checkout its own `-derivedDataPath` and
+  clean that directory. Never glob-delete `DerivedData/<Name>-*`: other worktrees have live
+  builds in there.
+- **A change inside a local package (`path:` dependency) doesn't take effect.** The app's
+  incremental build can skip rebuilding the package. Clean this checkout's DerivedData and build
+  again. A path dependency also writes no `Package.resolved`, so nothing records which package
+  commit a build used, and a mismatch builds without a warning.
 
-```
--sectcreate __TEXT __info_plist <path/to/Info.plist>
-```
+## Simulator
 
-## Skip
-
-Pure Swift with no Xcode build surface (SwiftPM libraries, server-side), and the Dart half of a
-Flutter project — that is `flutter-dart-code-review`. The iOS runner's signing and plist still
-fall under this file.
+- **A notification-permission alert appears on every launch and survives `simctl uninstall`
+  and `simctl privacy … reset all`.** Only erasing the device clears it: shut it down, then
+  `xcrun simctl erase <device>`. Don't request authorization in demo or screenshot mode, and
+  erase before taking screenshots on a simulator that has run the test suite.
