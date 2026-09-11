@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "flutter-dart-code-review",
-      "description": "Library-agnostic Flutter/Dart code review checklist: widget best practices, state management, Dart idioms, performance, accessibility, security, clean architecture.",
+      "description": "Flutter/Dart review checklist for what a general review walks past: accessibility, localization, widget idioms, rebuild and list performance, tests, dependencies. Reports findings by severity with a coverage record.",
       "source": "./",
       "strict": false,
       "skills": [
@@ -20,7 +20,7 @@
     },
     {
       "name": "xcode-ios-pitfalls",
-      "description": "Xcode/iOS build and signing traps that pass compilation, signing and unit tests, then fail at install time or silently at runtime: hand-written Info.plist missing CFBundle* keys, CODE_SIGNING_ALLOWED=NO stripping entitlements, macOS CLI rejected by TCC.",
+      "description": "Xcode silent failures: BUILD SUCCEEDED or green tests, then an entitlement quietly does nothing or a stale build is what runs. Signing, bundle identity, DerivedData, simulator state.",
       "source": "./",
       "strict": false,
       "skills": [
