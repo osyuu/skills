@@ -23,6 +23,7 @@ swift-lsp@claude-plugins-official
 flutter-dart-code-review@osyuu
 xcode-ios-pitfalls@osyuu
 release-assets@osyuu
+writing-standalone-skills@osyuu
 vgv-ai-flutter-plugin@very-good-claude-code-marketplace
 flutter-all@flutter-claude-code
 ui-ux-pro-max@ui-ux-pro-max-skill"

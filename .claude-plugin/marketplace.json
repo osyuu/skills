@@ -35,6 +35,15 @@
       "skills": [
         "./skills/engineering/release-assets"
       ]
+    },
+    {
+      "name": "writing-standalone-skills",
+      "description": "Draft a new skill in Matt Pocock's style whose product runs standalone: no plugin or workflow artefacts required. Binds only where a no-skill baseline run fails, and proves it in a clean run.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/engineering/writing-standalone-skills"
+      ]
     }
   ]
 }

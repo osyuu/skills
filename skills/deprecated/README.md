@@ -11,6 +11,7 @@
 | claude-md-hygiene | `writing-for-agents` | 它的 description 明寫涵蓋 AGENTS.md / CLAUDE.md |
 | teammate | `code-review` | 背景 agent 的操作面（`idle` ≠ 已交付、worktree 污染）沒有替代品，已搬進 `~/.claude/CLAUDE.md` |
 | repo-onboard | `setup-matt-pocock-skills` | 技術棧探測的用途是填守門的 conf，守門沒了目的也沒了 |
+| design-doc | `to-spec` | 替代方案、do-nothing baseline、drawbacks 三問已搬進 `~/.claude/CLAUDE.md`「寫 spec 與記決策」；DECISIONS.md 由 ADR 的 superseded 與 wayfinder 的 HITL/AFK 分型取代 |
 
 以下沒有替代品，是刻意不再做的：arch-guard、comment-budget、claim-check、
 sdd-harness-init、harness-audit。理由見 `.out-of-scope/mechanical-guards.md`。
