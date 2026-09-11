@@ -10,10 +10,9 @@ review、診斷、原型、交接都在那裡。**這個 marketplace 只放那�
 
 ```
 /plugin marketplace add osyuu/skills
+/plugin install osyuu-skills@osyuu               # release-assets、writing-standalone-skills
 /plugin install flutter-dart-code-review@osyuu   # 非 Flutter 環境可略
 /plugin install xcode-ios-pitfalls@osyuu         # 非 Xcode 環境可略
-/plugin install release-assets@osyuu
-/plugin install writing-standalone-skills@osyuu
 ```
 
 ## Skills

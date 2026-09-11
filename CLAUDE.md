@@ -6,8 +6,10 @@ Osyuu 的個人 Claude Code skill marketplace。這裡只放 `mattpocock-skills`
 ## Bucket
 
 `skills/engineering/` 是 promoted，`skills/deprecated/` 不是。
-**promoted 的每一支都要在 `.claude-plugin/marketplace.json` 的 `plugins[]` 有一筆，
+**promoted 的每一支都要在 `.claude-plugin/marketplace.json` 的 `plugins[]` 裡恰好出現一次，
 其餘 bucket 的不得出現在裡面**；每個 bucket 的 `README.md` 列出它底下的每一支。
+跨技術棧都用得到的進 `osyuu-skills`；綁特定技術棧的自成一個 plugin，才能按專案
+在 `enabledPlugins` 單獨開關。
 否決過的路存在 `.out-of-scope/`，一則寫清楚為什麼不做、誰要求過。
 
 ## 新機器
