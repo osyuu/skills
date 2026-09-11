@@ -122,6 +122,8 @@ agent 一定會踩的：
   交互作用——簽名與打包壞掉時，它一條 finding 都不會產生。
 - **`release-assets`**：main flow 到 `code-review` 就結束，**沒有出貨那一段**。
   release notes 與商店素材沒有編譯器、測試、review 任何一層網子接著。
+- **`writing-standalone-skills`**：要寫給沒裝 Matt 的人也能用的 skill 時用它，不是 `writing-for-agents`。
+  它是 user-invoked，我叫不到，請你自己跑 `/osyuu:writing-standalone-skills`。
 
 **一半的 skill 是 user-invoked，只有你打得到**，它們不出現在我的清單裡（那是刻意的，
 換掉常駐的清單預算）。harness 會擋下模型的 Skill 工具呼叫，並禁止用別的方式模仿它們的

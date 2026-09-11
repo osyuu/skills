@@ -21,7 +21,7 @@ statusline、settings 片段。新機器 clone 後跑 `sh bootstrap/install.sh`�
 
 判準走 `mattpocock-skills:writing-for-agents`，那份是單一真相——包括 invocation 二分法：
 只有模型需要自己伸手拿的才留 `description`，其餘設 `disable-model-invocation: true`
-換掉常駐的清單預算。
+換掉常駐的清單預算。要讓產物不依賴 Matt 的 plugin 與 flow 時，另見 `writing-standalone-skills`。
 
 **SKILL.md 適用跟 code 註解同一套規範**：寫約束與違反的後果，不寫驗證過程、不寫歷史、
 不寫推導過程。「實測踩過…」那類句子證明的是作者很認真，不是這支 skill 怎麼運作——
