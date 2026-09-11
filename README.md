@@ -8,11 +8,15 @@ review、診斷、原型、交接都在那裡。**這個 marketplace 只放那�
 
 ## 安裝
 
+必裝的是 `mattpocock-skills`，這裡的每一支都是疊在它上面的選配：
+
 ```
+/plugin install mattpocock-skills@claude-plugins-official
+
 /plugin marketplace add osyuu/skills
 /plugin install osyuu-skills@osyuu               # release-assets、writing-standalone-skills
-/plugin install flutter-dart-code-review@osyuu   # 非 Flutter 環境可略
-/plugin install xcode-ios-pitfalls@osyuu         # 非 Xcode 環境可略
+/plugin install flutter-dart-code-review@osyuu   # Flutter 專案才需要
+/plugin install xcode-ios-pitfalls@osyuu         # Xcode 專案才需要
 ```
 
 ## Skills
